@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CVMParser": {
+      "commandName": "Project",
+      "commandLineArgs": "2021 1 2021 12 c:\\temp < \"c:\\temp\\cnpj.txt\""
+    }
+  }
+}
