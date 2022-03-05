@@ -47,15 +47,7 @@ public class Program
         ParserCore fp = new(opts, _registros, _buscar);
         fp.MostrarParametros();
         fp.ParsePeriodo();
-        if (opts.EscreverSaida)
-        {
-            fp.EscreverNovoArquivo();
-        }
-        else
-        {
-            Console.WriteLine("- Ignorando escrita do arquivo de saída");
-        }
-
+        fp.EscreverNovoArquivo();
 
     }   
 

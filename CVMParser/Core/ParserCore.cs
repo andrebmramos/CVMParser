@@ -12,9 +12,20 @@ namespace FundosParser.Core;
 
 public class ParserCore
 {
+    
+    public enum Modo
+    {
+        DetectarInicioDosFundos,
+        ExecutarLeituraDasCotas
+    }
+
+    // Injetados no ctor
     private readonly ParserOptions _opts;
     private readonly List<Registro> _registros;
     private readonly List<string> _buscar;
+
+    // Outros
+    private bool _inicioDosFundosDetectado = false;
 
     public ParserCore(ParserOptions opts, List<Registro> registros, List<string> buscar)
     {
@@ -33,30 +44,67 @@ public class ParserCore
     }
 
 
-    // Loop por todo período chamando, a cada mês, função que trata respectivo arquivo
+
+
     public void ParsePeriodo()
     {
-        int anoInicial = _opts.AnoInicial;
-        int mesInicial = _opts.MesInicial; 
-        int anoFinal   = _opts.AnoFinal;
-        int mesFinal   = _opts.MesFinal;
-        int count = 0;
+        ParsePeriodo(Modo.ExecutarLeituraDasCotas);
+    }
+
+    // Loop por todo período chamando, a cada mês, função que trata respectivo arquivo
+    public void ParsePeriodo(Modo modo)
+    {
+        // Verificar se datas estão válidas
+        if (!ValidarPeriodo())
+        {
+            throw new ArgumentException("Datas fornecidas inválidas");
+        }
         // Inicio cronômetro antes do loop
         var watch = new System.Diagnostics.Stopwatch();
         watch.Start();
-        for (int ano = anoInicial; ano <= anoFinal; ano++)
-            for (int mes = (ano == anoInicial ? mesInicial : 1);
-                     mes <= (ano == anoFinal ? mesFinal : 12); mes++)
+        // Loop principal
+        int mesesProcessados = 0;
+
+        // direção inversa
+        //for (int ano = _opts.AnoFinal; ano >= _opts.AnoInicial; ano--)
+        //    for (int mes = (ano == _opts.AnoFinal ? _opts.MesFinal : 12);
+        //             mes >= (ano == _opts.AnoInicial ? _opts.MesInicial : 1); mes--)
+        //    {
+        //        ParseAnoMes(ano, mes, _buscar, _registros);
+        //        mesesProcessados++;
+        //    }
+
+
+        // direção direta
+        for (int ano = _opts.AnoInicial; ano <= _opts.AnoFinal; ano++)
+        {
+            for (int mes = (ano == _opts.AnoInicial ? _opts.MesInicial : 1);
+                     mes <= (ano == _opts.AnoFinal ? _opts.MesFinal : 12); mes++)
             {
-                ParseAnoMes(ano, mes, _buscar, _registros);
-                count++;
+                switch (modo)
+                {
+                    case Modo.DetectarInicioDosFundos:
+                        DetectarInicioDosFundos(ano, mes);
+                        break;
+                    case Modo.ExecutarLeituraDasCotas:
+                        ParseAnoMes(ano, mes, _buscar, _registros);
+                        break;
+                }
+                mesesProcessados++;
             }
+        }
+        // Fim
         watch.Stop();
-        Console.WriteLine($"> Processados {count} arquivos, tempo: {watch.Elapsed}");
+        Console.WriteLine($"> Processados {mesesProcessados} arquivos, modo: {modo}, tempo: {watch.Elapsed}");
+    }
+
+    private void DetectarInicioDosFundos(int ano, int mes)
+    {
+        throw new NotImplementedException();
     }
 
 
-    // Tratamentoi do arquivo do respectivo ano e mês
+    // Tratamento do arquivo do respectivo ano e mês
     private void ParseAnoMes(int ano, int mes, List<string> buscar, List<Registro> registros)
     {
         // Identifico arquivo de dados da CVM do respectivo ano e mês
@@ -127,10 +175,17 @@ public class ParserCore
     // Escreve arquivo de saída
     public void EscreverNovoArquivo()
     {
-        using (var writer = new StreamWriter($@"{_opts.PathEscrita}\{_opts.FileName}.csv"))
-        using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
+        if (_opts.EscreverSaida)
         {
-            csv.WriteRecords(_registros);
+            using (var writer = new StreamWriter($@"{_opts.PathEscrita}\{_opts.FileName}.csv"))
+            using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
+            {
+                csv.WriteRecords(_registros);
+            }            
+        }
+        else
+        {
+            Console.WriteLine("- Ignorando escrita do arquivo de saída");
         }
     }
 
@@ -161,7 +216,7 @@ public class ParserCore
         Console.WriteLine(@"### ");
     }
 
-    public bool ParseAndValidateDatas()
+    public bool ValidarPeriodo()
     {        
         // Valida a lógica 
         return ValidarAno(_opts.AnoInicial) && ValidarAno(_opts.AnoFinal) &&         // Ano entre min e max
