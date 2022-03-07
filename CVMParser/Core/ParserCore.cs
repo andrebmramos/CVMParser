@@ -146,13 +146,15 @@ public class ParserCore
 
 
     // Funções principais  
-    public void ParsePeriodo(bool utilizarCacheDePresencas = true)
+    public void ParsePeriodo()
     {
         // Verificar se datas estão válidas
         if (!ValidarPeriodo())
         {
             throw new ArgumentException("Datas fornecidas inválidas");
         }
+        // Utilizara cache se foi informado arquivo, senão desprezará
+        bool utilizarCacheDePresencas = _opts.NomeArquivoCacheDePresencas != "";
         // Inicio cronômetro antes do loop
         var watch = new System.Diagnostics.Stopwatch();
         watch.Start();

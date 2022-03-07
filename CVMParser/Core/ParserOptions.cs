@@ -24,7 +24,7 @@ public readonly record struct ParserOptions()
     public string PathLeitura { get; init; } = @"c:\temp";  // Pasta dos arquivos baixdos da CVM, padrão c:\temp
     public string PathEscrita { get; init; } = @"c:\temp";  // Pasta para escrita do arquivo filtrado (saída)
     public string NomeArquivoFinal { get; init; } = "_DADOS_FILTRADOS";
-    public string NomeArquivoCacheDePresencas { get; init; } = "";
+    public string NomeArquivoCacheDePresencas { get; init; } = ""; // NULO equivale a trabalhar sem cache
 
     // Flags
     public bool EscreverSaida { get; init; } = true;

@@ -28,7 +28,7 @@ public class Program
 
         // Leitura do arquivo de CNPJs
         // Atenção: espera-se SEMPRE receber um arquivo com CNPJs da forma
-        // c:\> CVMParser < c:\temp\cnpj.txt
+        // c:\> FundosParser < c:\temp\cnpj.txt
         // onde cnpj.txt = arquivo com um cnpj por linha
         string? cnpj = Console.ReadLine()?.Trim();
         while (!String.IsNullOrEmpty(cnpj))
@@ -49,12 +49,13 @@ public class Program
         fp.MostrarParametrosResumidos();
 
         // Criação e teste do cache de presenças
-        fp.ConstruirCacheDePresencas();
-        fp.MostrarCacheDePresencas();
+        //fp.ConstruirCacheDePresencas();
+        //fp.MostrarCacheDePresencas();
                 
         // Teste principal, com e sem uso do cache de presenças
         // fp.ParsePeriodo(false);
-        fp.ParsePeriodo(true);
+        fp.ParsePeriodo();
+        //fp.Processar();
 
         
 
