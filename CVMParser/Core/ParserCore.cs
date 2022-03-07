@@ -12,47 +12,146 @@ namespace FundosParser.Core;
 
 public class ParserCore
 {
-    
-    public enum Modo
-    {
-        DetectarInicioDosFundos,
-        ExecutarLeituraDasCotas
-    }
-
+        
     // Injetados no ctor
     private readonly ParserOptions _opts;
-    private readonly List<Registro> _registros;
+    private readonly List<RegistroCotas> _cotas;
     private readonly List<string> _buscar;
 
     // Outros
-    private bool _inicioDosFundosDetectado = false;
+    private List<RegistroPresenca>? _cachePresencas; // cache das datas quando cada fundo de interesse se faz presente
 
-    public ParserCore(ParserOptions opts, List<Registro> registros, List<string> buscar)
+    public ParserCore(ParserOptions opts, List<RegistroCotas> cotas, List<string> buscar)
     {
         _opts=opts;
-        _registros=registros;
+        _cotas=cotas;
         _buscar=buscar;
     }
 
 
-    public void MostrarRegistrosCnpj(string cnpj)
+
+    
+
+
+    public void ConstruirCacheDePresencas()
+        => ConstruirCacheDePresencas(_opts.AnoInicial, _opts.MesInicial, _opts.AnoFinal, _opts.MesFinal);
+    
+    private void ConstruirCacheDePresencas(int anoInicial, int mesInicial, int anoFinal, int mesFinal)
     {
-        Console.WriteLine();
-        Console.WriteLine($"REGISTROS DO CNPJ {cnpj}:");
-        foreach (var item in _registros.Where(r => r.Cnpj.Equals(cnpj)))
-            Console.WriteLine(item);
+        Console.WriteLine($"> Construindo cache de presenças");
+
+        // Resultado
+        List<RegistroPresenca> result = new();
+        List<string> conhecidos = new();
+        
+        // Contadores
+        int contaDescartesTotal = 0;
+        int contaNovosTotal = 0;
+        int contaArquivosProcessadosTotal = 0;
+
+        // Cronômetro maior
+        var watchTotal = new System.Diagnostics.Stopwatch();
+        watchTotal.Start();
+
+        // Loop maior
+        for (int ano = anoInicial; ano <= anoFinal; ano++)
+        {
+            for (int mes = (ano == anoInicial ? mesInicial : 1);
+                     mes <= (ano == anoFinal ? mesFinal : 12); mes++)
+            {
+                // Contadores auxiliares
+                int contaDescartes = 0;
+                int contaNovos = 0;
+
+                // Identifico arquivo CSV
+                string fileName = $@"{_opts.PathLeitura}\inf_diario_fi_{ano:0000}{mes:00}.csv";
+                Console.Write($"> Buscando CNPJs em {fileName}...");
+
+                // Crio recursos
+                using (var reader = new StreamReader(fileName))
+                using (var csv = new CsvReader(reader,
+                                               new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
+                {
+                    // Leitura do cabeçalho exige esses dois passos
+                    csv.Read(); csv.ReadHeader();
+                    // Cronômetro menor (leitura de único arquivo)
+                    var watcArquivo = new System.Diagnostics.Stopwatch();
+                    watcArquivo.Start();
+                    // Loop do arquivo
+                    string cnpj_anterior = "";
+                    while (csv.Read())
+                    {
+                        string cnpj = csv.GetField(HEADER_Cnpj);
+                        if (cnpj != cnpj_anterior && _buscar.Contains(cnpj))
+                        {
+                            // nesse caso, achei linha com novo cnpj. Atualizo anterior e processo:
+                            cnpj_anterior = cnpj;
+                            if (conhecidos.Contains(cnpj))  // obs.: trabalhar direto nba lista de resultados é muito menos eficiente: (result.Exists(r => r.Cnpj==cnpj))
+                            {
+                                // CNPJ já estava identificado: pulo linhas para ganhar tempo e continuo
+                                contaDescartes++;
+                                continue;
+                            }
+                            else 
+                            {
+                                // CNPJ não estava identificado: crio novo registro da sua presença a partir deste mês
+                                contaNovos++;
+                                conhecidos.Add(cnpj);
+                                var rp = new RegistroPresenca(cnpj, ano, mes);
+                                result.Add(new RegistroPresenca(cnpj, ano, mes));
+                            }   
+                        }
+                        else
+                        {
+                            contaDescartes++;
+                        }
+
+                    }
+                    watcArquivo.Stop();
+                    Console.WriteLine($"concluído; Tempo: {watcArquivo.Elapsed}, Encontrados {contaNovos}, Descartados {contaDescartes}");
+                    contaDescartesTotal += contaDescartes;
+                    contaNovosTotal += contaNovos;
+                    contaArquivosProcessadosTotal++;
+                }
+            }
+        }
+        watchTotal.Stop();
+        _cachePresencas = result;
+        Console.WriteLine($"> Concluída busca em {contaArquivosProcessadosTotal} arquivos; Tempo: {watchTotal.Elapsed}, Encontrados {contaNovosTotal}; Descartadas {contaDescartesTotal} leituras");
+        MostrarCacheDePresencas();
+        SalvarCacheDePresencas();
+    }
+
+    public void MostrarCacheDePresencas()
+    {
+        Console.WriteLine("> Registro de Presenças:");
+        foreach (var item in _cachePresencas)
+        {
+            Console.WriteLine($"> {item}");
+        }
+    }
+
+    public void SalvarCacheDePresencas()
+    {
+        Console.WriteLine("> Salvando arquivo de presenças:");
+        using (var writer = new StreamWriter($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
+        using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
+        {
+            csv.WriteRecords(_cachePresencas);
+        }
+    }
+
+    public void LerCacheDePresencasDeArquivo()
+    {       
+        using (var reader = new StreamReader($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
+        using (var csv = new CsvReader(reader,
+                                       new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
+            _cachePresencas = csv.GetRecords<RegistroPresenca>().ToList();
     }
 
 
-
-
-    public void ParsePeriodo()
-    {
-        ParsePeriodo(Modo.ExecutarLeituraDasCotas);
-    }
-
-    // Loop por todo período chamando, a cada mês, função que trata respectivo arquivo
-    public void ParsePeriodo(Modo modo)
+    // Funções principais  
+    public void ParsePeriodo(bool utilizarCacheDePresencas = true)
     {
         // Verificar se datas estão válidas
         if (!ValidarPeriodo())
@@ -64,48 +163,42 @@ public class ParserCore
         watch.Start();
         // Loop principal
         int mesesProcessados = 0;
-
-        // direção inversa
-        //for (int ano = _opts.AnoFinal; ano >= _opts.AnoInicial; ano--)
-        //    for (int mes = (ano == _opts.AnoFinal ? _opts.MesFinal : 12);
-        //             mes >= (ano == _opts.AnoInicial ? _opts.MesInicial : 1); mes--)
-        //    {
-        //        ParseAnoMes(ano, mes, _buscar, _registros);
-        //        mesesProcessados++;
-        //    }
-
-
-        // direção direta
         for (int ano = _opts.AnoInicial; ano <= _opts.AnoFinal; ano++)
         {
             for (int mes = (ano == _opts.AnoInicial ? _opts.MesInicial : 1);
                      mes <= (ano == _opts.AnoFinal ? _opts.MesFinal : 12); mes++)
             {
-                switch (modo)
+                if (utilizarCacheDePresencas)
                 {
-                    case Modo.DetectarInicioDosFundos:
-                        DetectarInicioDosFundos(ano, mes);
-                        break;
-                    case Modo.ExecutarLeituraDasCotas:
-                        ParseAnoMes(ano, mes, _buscar, _registros);
-                        break;
+                    ParseAnoMesComCache(ano, mes, _buscar, _cotas);
+                }
+                else 
+                {
+                    ParseAnoMes(ano, mes, _buscar, _cotas);
                 }
                 mesesProcessados++;
             }
         }
         // Fim
         watch.Stop();
-        Console.WriteLine($"> Processados {mesesProcessados} arquivos, modo: {modo}, tempo: {watch.Elapsed}");
+        Console.WriteLine($"> Processados {mesesProcessados} arquivos, tempo: {watch.Elapsed}");
+
+        // Auxiliares
+        bool ValidarPeriodo()
+        {
+            // Valida a lógica 
+            return ValidarAno(_opts.AnoInicial) && ValidarAno(_opts.AnoFinal) &&         // Ano entre min e max
+                   ValidarMes(_opts.MesInicial) && ValidarMes(_opts.MesFinal) &&         // Mês entre 1 e 12
+                   _opts.AnoFinal >= _opts.AnoInicial &&                                 // Ano Final >= inicial
+                   (_opts.AnoInicial != _opts.AnoFinal ? true : _opts.MesFinal >= _opts.MesInicial); // Se mesmo ano, exige mêsFinal >= Inicial
+
+            // Funções internas auxiliares
+        }
+        static bool ValidarAno(int ano) => ano >= ANO_MIN && ano <= ANO_MAX;
+        static bool ValidarMes(int mes) => 1 <= mes && mes <= 12;
     }
-
-    private void DetectarInicioDosFundos(int ano, int mes)
-    {
-        throw new NotImplementedException();
-    }
-
-
-    // Tratamento do arquivo do respectivo ano e mês
-    private void ParseAnoMes(int ano, int mes, List<string> buscar, List<Registro> registros)
+    
+    private void ParseAnoMes(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
     {
         // Identifico arquivo de dados da CVM do respectivo ano e mês
         string fileName = $@"{_opts.PathLeitura}\inf_diario_fi_{ano:0000}{mes:00}.csv";
@@ -156,7 +249,7 @@ public class ParserCore
                         ultimoAlvoEncontrado = cnpj;
                     }
                     // Prossigo lendo demais campos, crio o registro e armazeno na lista de resultados
-                    var registro = new Registro
+                    var registro = new RegistroCotas
                     (
                         Cnpj: cnpj,
                         Data: csv.GetField<DateOnly>(HEADER_Data),
@@ -171,16 +264,56 @@ public class ParserCore
         }
     }
 
+    private void ParseAnoMesComCache(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
+    {
+        // Garantir que cache de presenças esteja carregado
+        if (_cachePresencas==null) LerCacheDePresencasDeArquivo();
+            
+        // Ideia: criar uma nova lista de cnpjs a buscar que contenha apenas os CNPJs
+        // presentes neste mês e passá-la como argumento apra a função ParseAnoMes
+        List<string> presentes = new();
 
-    // Escreve arquivo de saída
+        // Verificar cada CNPJ da lista geral. Garantir que haja conhecimento dele
+        // no cache de presenças, depois, confirmar que está presente no ano e mês
+        // em busca. Se tiver, incluir na lista de presentes
+        foreach (var cnpj in _buscar)
+        {
+            RegistroPresenca? rp = _cachePresencas?.SingleOrDefault(x => x.Cnpj == cnpj);
+            if (rp == null)
+            {
+                throw new Exception($"Solicitado CNPJ {cnpj}, ausente no cache de presenças. É preciso reconstruir ou desativar o cache");
+            }
+            else
+            {
+                if (ConfirmarPresencaNoPeriodo(rp, ano, mes))
+                {
+                    presentes.Add(cnpj);
+                }
+            }
+        }
+
+        // Prosseguir com o parse apenas dos CNPJs que sei que constarão no ano e mês em questão
+        Console.Write($"> [Buscando {presentes.Count}]: ");
+        ParseAnoMes(ano, mes, presentes, registros);
+
+        // Auxiliar
+        static bool ConfirmarPresencaNoPeriodo(RegistroPresenca rp, int ano, int mes) => rp switch
+        {
+            RegistroPresenca r when r.Ano < ano => true,           // cnpj presente já em ano anterior ao pesquisado
+            RegistroPresenca r when r.Ano > ano => false,          // cnpj presente somente em ano posterior ao pesquisado
+            RegistroPresenca r when r.Ano == ano => r.Mes <= mes,  // pesquisando cnpj em ano registrado, verificar mês
+            _ => throw new Exception($"Erro em {nameof(ConfirmarPresencaNoPeriodo)}")
+        };
+    }
+
     public void EscreverNovoArquivo()
     {
         if (_opts.EscreverSaida)
         {
-            using (var writer = new StreamWriter($@"{_opts.PathEscrita}\{_opts.FileName}.csv"))
+            using (var writer = new StreamWriter($@"{_opts.PathEscrita}\{_opts.NomeArquivoFinal}.csv"))
             using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
             {
-                csv.WriteRecords(_registros);
+                csv.WriteRecords(_cotas);
             }            
         }
         else
@@ -189,54 +322,43 @@ public class ParserCore
         }
     }
 
+    
 
     public void Usage()
     {
         Console.WriteLine(@"### ");
-        Console.WriteLine(@"### ATENÇÃO PARA AS FORMAS DE USO ###");
+        Console.WriteLine(@"### ATENÇÃO PARA A FORMA DE USO ###");
         Console.WriteLine(@"### ");
-        Console.WriteLine(@"### 0 argumentos: Fornecer no mínimo arquivo texto com um ");
-        Console.WriteLine(@"###         CNPJ por linha. Passar caminho completo da forma");
-        Console.WriteLine(@"###         CVMParser < c:\caminho\arquivo_cnpjs.txt");
-        Console.WriteLine(@"###         (obs.: a passagem de arquivo não conta como argumento)");
+        Console.WriteLine(@"### FundosParser -op1=OPCAO1 -op2=OPCAO2 ... < c:\caminho\arquivo_cnpjs.txt");
         Console.WriteLine(@"### ");
-        Console.WriteLine(@"### 2 argumentos: Esses argumentos serão os caminhos para");
-        Console.WriteLine(@"###         leitura dos arquivos da CVM (padrão c:\temp) e ");
-        Console.WriteLine(@"###         escrita do arquivos de saída (padrão c:\temp) ");
-        Console.WriteLine(@"###         CVMParser c:\downloads c:\filtrados < c:\caminho\arquivo_cnpjs.txt");
+        Console.WriteLine(@"### Ver as opções no arquivo ParserOptions.cs");
         Console.WriteLine(@"### ");
-        Console.WriteLine(@"### 4 argumentos: Serão entendidos como as datas na forma");
-        Console.WriteLine(@"###         AnoInicial MesInicial AnoFinal MesFinal");
-        Console.WriteLine(@"###         padrão: 2021 01 2021 12;  obs: menor ano 2017");
-        Console.WriteLine(@"###         CVMParser 2017 1 2021 12 < c:\caminho\arquivo_cnpjs.txt");
-        Console.WriteLine(@"### ");
-        Console.WriteLine(@"### 6 argumentos: Serão as datas como acima e o caminho dos>");
-        Console.WriteLine(@"###         arquivos da CVM, exemplo");
-        Console.WriteLine(@"###         CVMParser 2017 1 2021 12 c:\downloads c:\filtrados < c:\caminho\arquivo_cnpjs.txt");
-        Console.WriteLine(@"### ");
-    }
+    }    
 
-    public bool ValidarPeriodo()
-    {        
-        // Valida a lógica 
-        return ValidarAno(_opts.AnoInicial) && ValidarAno(_opts.AnoFinal) &&         // Ano entre min e max
-               ValidarMes(_opts.MesInicial) && ValidarMes(_opts.MesFinal) &&         // Mês entre 1 e 12
-               _opts.AnoFinal >= _opts.AnoInicial &&                                 // Ano Final >= inicial
-               (_opts.AnoInicial != _opts.AnoFinal ? true : _opts.MesFinal >= _opts.MesInicial); // Se mesmo ano, exige mêsFinal >= Inicial
-    
-        // Funções internas auxiliares
-        bool ValidarAno(int ano) => ano >= ANO_MIN && ano <= ANO_MAX;
-        bool ValidarMes(int mes) => 1 <= mes && mes <= 12;    
+    public void MostrarParametrosResumidos()
+    {
+        // Funcionalidade
+        Console.WriteLine($"> Iniciando com Ano-Mes-Inicial:  {_opts.AnoInicial:0000}-{_opts.MesInicial:00}");
+        Console.WriteLine($">               Ano-Mes-Final:    {_opts.AnoFinal:0000}-{_opts.MesFinal:00}");
+        Console.WriteLine($">               Pasta de leitura: {_opts.PathLeitura}");
+        Console.WriteLine($">               Pasta de escrita: {_opts.PathEscrita}");
+        Console.WriteLine($">               Arquivo de saída: {_opts.NomeArquivoFinal}.csv");
+        Console.WriteLine($">               Arquivo de cache: {_opts.NomeArquivoCacheDePresencas}.csv");
     }
 
     public void MostrarParametros()
     {
         // Funcionalidade
-        Console.WriteLine($"> Iniciando com Ano-Mes-Inicial: {_opts.AnoInicial:0000}-{_opts.MesInicial:00}");
-        Console.WriteLine($">               Ano-Mes-Final:   {_opts.AnoFinal:0000}-{_opts.MesFinal:00}");
-        Console.WriteLine($">               Arquivos mensais de dados da CVM lidos de: {_opts.PathLeitura}");
-        Console.WriteLine($">               Arquivo _DADOS_FILTRADOS.csv escrito em:   {_opts.PathLeitura}");
+        Console.WriteLine($"> Parâmetros:");
+        Console.WriteLine($"> {_opts}");
     }
 
+    public void MostrarRegistrosCnpj(string cnpj)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"REGISTROS DO CNPJ {cnpj}:");
+        foreach (var item in _cotas.Where(r => r.Cnpj.Equals(cnpj)))
+            Console.WriteLine(item);
+    }
 
 }

@@ -11,7 +11,7 @@ public class Program
 {
 
     // Estruturas principais:
-    private static List<Registro> _registros = new(); // Lista de registros a serem armazenados
+    private static List<RegistroCotas> _registros = new(); // Lista de registros a serem armazenados
     private static List<string>   _buscar = new();    // Lista de CNPJs a serem buscados
     
 
@@ -46,10 +46,29 @@ public class Program
         // Criação do Parser
         ParserCore fp = new(opts, _registros, _buscar);
         fp.MostrarParametros();
-        fp.ParsePeriodo();
-        fp.EscreverNovoArquivo();
+        fp.MostrarParametrosResumidos();
 
-    }   
+        // Criação e teste do cache de presenças
+        TestesCache();
+                
+        // Teste principal, com e sem uso do cache de presenças
+        fp.ParsePeriodo(false);
+        fp.ParsePeriodo(true);
+
+        // Escreve arquivo de saída
+        //fp.EscreverNovoArquivo();
+
+
+        void TestesCache()
+        {
+            fp.ConstruirCacheDePresencas();
+            fp.SalvarCacheDePresencas();
+            fp.LerCacheDePresencasDeArquivo();
+            fp.MostrarCacheDePresencas();
+        }
+
+
+    }
 
 }
 

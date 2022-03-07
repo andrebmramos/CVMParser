@@ -2,13 +2,7 @@
 
 public readonly record struct ParserOptions()
 {
-    // APENAS TESTE
-    public enum TestEnum
-    {
-        ENUM1,
-        ENUM2
-    }
-
+    
     // CONSTANTES
     // Parametrização do arquivo CSV
     public readonly static string HEADER_Cnpj = "CNPJ_FUNDO";
@@ -16,10 +10,8 @@ public readonly record struct ParserOptions()
     public readonly static string HEADER_Cota = "VL_QUOTA";
     public readonly static string HEADER_NumCotistas = "NR_COTST";
     // Valores max e min para validar anos
-    public readonly static int ANO_MIN = 2017; // Arquivos anteriores em histórico compactado
+    public readonly static int ANO_MIN = 2005; // Arquivos entre 2005 e 2016 em histórico compactado
     public readonly static int ANO_MAX = 2100; // A partir de 2100, chamar suporte técnico :-)
-
-
 
 
     // Range de datas
@@ -31,12 +23,12 @@ public readonly record struct ParserOptions()
     // Caminhos dos arquivos
     public string PathLeitura { get; init; } = @"c:\temp";  // Pasta dos arquivos baixdos da CVM, padrão c:\temp
     public string PathEscrita { get; init; } = @"c:\temp"; // Pasta para escrita do arquivo filtrado (saída)
-    public string FileName { get; init; } = "_DADOS_FILTRADOS";
+    public string NomeArquivoFinal { get; init; } = "_DADOS_FILTRADOS";
+    public string NomeArquivoCacheDePresencas { get; init; } = "_cache";
 
     // Flags
     public bool EscreverSaida { get; init; } = true;
-    public TestEnum testEnum { get; init; } = TestEnum.ENUM1;
-
+    
     // Nomes curtos, de modo usar, por exemplo
     // comando -in="c:\temp" -out="c:\saida"
     public readonly static Dictionary<string, string> switchMappings = new()
@@ -50,9 +42,9 @@ public readonly record struct ParserOptions()
         { "-out", nameof(PathEscrita) },
         { "-escrever", nameof(EscreverSaida) },
 
-        { "-nome", nameof(FileName) },
-
-        { "-enum", nameof(testEnum) },
+        { "-nome", nameof(NomeArquivoFinal) },
+        { "-cache", nameof(NomeArquivoCacheDePresencas) },
+        
     };
 
 }
