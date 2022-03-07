@@ -44,28 +44,19 @@ public class Program
 
 
         // Criação do Parser
-        ParserCore fp = new(opts, _registros, _buscar);
+        ParserCore fp = new(opts, _buscar);
         fp.MostrarParametros();
         fp.MostrarParametrosResumidos();
 
         // Criação e teste do cache de presenças
-        TestesCache();
+        fp.ConstruirCacheDePresencas();
+        fp.MostrarCacheDePresencas();
                 
         // Teste principal, com e sem uso do cache de presenças
-        fp.ParsePeriodo(false);
+        // fp.ParsePeriodo(false);
         fp.ParsePeriodo(true);
 
-        // Escreve arquivo de saída
-        //fp.EscreverNovoArquivo();
-
-
-        void TestesCache()
-        {
-            fp.ConstruirCacheDePresencas();
-            fp.SalvarCacheDePresencas();
-            fp.LerCacheDePresencasDeArquivo();
-            fp.MostrarCacheDePresencas();
-        }
+        
 
 
     }

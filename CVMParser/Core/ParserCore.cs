@@ -15,24 +15,20 @@ public class ParserCore
         
     // Injetados no ctor
     private readonly ParserOptions _opts;
-    private readonly List<RegistroCotas> _cotas;
     private readonly List<string> _buscar;
 
     // Outros
+    private List<RegistroCotas>     _cotas = new();      // informação principal das cotas. Obtenção em Parse
     private List<RegistroPresenca>? _cachePresencas; // cache das datas quando cada fundo de interesse se faz presente
 
-    public ParserCore(ParserOptions opts, List<RegistroCotas> cotas, List<string> buscar)
+    public ParserCore(ParserOptions opts, List<string> buscar)
     {
         _opts=opts;
-        _cotas=cotas;
         _buscar=buscar;
     }
 
 
-
-    
-
-
+    // Funções relativas ao cache de presenças
     public void ConstruirCacheDePresencas()
         => ConstruirCacheDePresencas(_opts.AnoInicial, _opts.MesInicial, _opts.AnoFinal, _opts.MesFinal);
     
@@ -118,7 +114,6 @@ public class ParserCore
         watchTotal.Stop();
         _cachePresencas = result;
         Console.WriteLine($"> Concluída busca em {contaArquivosProcessadosTotal} arquivos; Tempo: {watchTotal.Elapsed}, Encontrados {contaNovosTotal}; Descartadas {contaDescartesTotal} leituras");
-        MostrarCacheDePresencas();
         SalvarCacheDePresencas();
     }
 
@@ -131,7 +126,7 @@ public class ParserCore
         }
     }
 
-    public void SalvarCacheDePresencas()
+    private void SalvarCacheDePresencas()
     {
         Console.WriteLine("> Salvando arquivo de presenças:");
         using (var writer = new StreamWriter($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
@@ -141,7 +136,7 @@ public class ParserCore
         }
     }
 
-    public void LerCacheDePresencasDeArquivo()
+    private void LerCacheDePresencasDeArquivo()
     {       
         using (var reader = new StreamReader($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
         using (var csv = new CsvReader(reader,
@@ -182,6 +177,7 @@ public class ParserCore
         // Fim
         watch.Stop();
         Console.WriteLine($"> Processados {mesesProcessados} arquivos, tempo: {watch.Elapsed}");
+        EscreverNovoArquivo();
 
         // Auxiliares
         bool ValidarPeriodo()
@@ -273,18 +269,21 @@ public class ParserCore
         // presentes neste mês e passá-la como argumento apra a função ParseAnoMes
         List<string> presentes = new();
 
-        // Verificar cada CNPJ da lista geral. Garantir que haja conhecimento dele
-        // no cache de presenças, depois, confirmar que está presente no ano e mês
-        // em busca. Se tiver, incluir na lista de presentes
+        // Confrontar cada CNPJ da lista de busca com o cache de presenças
+        bool flagAbortarCache = false;
         foreach (var cnpj in _buscar)
         {
+            // Procuro cnpj no cache de presenças
             RegistroPresenca? rp = _cachePresencas?.SingleOrDefault(x => x.Cnpj == cnpj);
             if (rp == null)
             {
-                throw new Exception($"Solicitado CNPJ {cnpj}, ausente no cache de presenças. É preciso reconstruir ou desativar o cache");
+                // cnpj não localizado no cache: abortar e, adiante, prosseguir sem cache
+                flagAbortarCache = true;
+                break;
             }
             else
             {
+                // cnpj localizado no cache. Incluir na lista de "presentes em cache"
                 if (ConfirmarPresencaNoPeriodo(rp, ano, mes))
                 {
                     presentes.Add(cnpj);
@@ -292,9 +291,19 @@ public class ParserCore
             }
         }
 
-        // Prosseguir com o parse apenas dos CNPJs que sei que constarão no ano e mês em questão
-        Console.Write($"> [Buscando {presentes.Count}]: ");
-        ParseAnoMes(ano, mes, presentes, registros);
+        // Conclusão
+        if (flagAbortarCache)
+        {
+            // Alguns CNPJs não localizados no cache de presenças. Prosseguir sem cache.
+            Console.Write($"> [CACHE INCOMPLETO ABORTADO]: ");
+            ParseAnoMes(ano, mes, buscar, registros);
+        }
+        else
+        {
+            // Prosseguir com o parse apenas dos CNPJs que sei que constarão no ano e mês em questão
+            Console.Write($"> [Cache ativo]: ");
+            ParseAnoMes(ano, mes, presentes, registros);
+        }
 
         // Auxiliar
         static bool ConfirmarPresencaNoPeriodo(RegistroPresenca rp, int ano, int mes) => rp switch
@@ -306,7 +315,7 @@ public class ParserCore
         };
     }
 
-    public void EscreverNovoArquivo()
+    private void EscreverNovoArquivo()
     {
         if (_opts.EscreverSaida)
         {
@@ -323,7 +332,7 @@ public class ParserCore
     }
 
     
-
+    // Funções auxiliares
     public void Usage()
     {
         Console.WriteLine(@"### ");
