@@ -270,16 +270,14 @@ public class ParserCore
         List<string> presentes = new();
 
         // Confrontar cada CNPJ da lista de busca com o cache de presenças
-        bool flagAbortarCache = false;
         foreach (var cnpj in _buscar)
         {
             // Procuro cnpj no cache de presenças
             RegistroPresenca? rp = _cachePresencas?.SingleOrDefault(x => x.Cnpj == cnpj);
             if (rp == null)
             {
-                // cnpj não localizado no cache: abortar e, adiante, prosseguir sem cache
-                flagAbortarCache = true;
-                break;
+                // cnpj não localizado no cache: abortar 
+                throw new Exception($"CNPJ {cnpj} não localizado no cache. Reconstruir cache ou executar sem.");
             }
             else
             {
@@ -291,19 +289,9 @@ public class ParserCore
             }
         }
 
-        // Conclusão
-        if (flagAbortarCache)
-        {
-            // Alguns CNPJs não localizados no cache de presenças. Prosseguir sem cache.
-            Console.Write($"> [CACHE INCOMPLETO ABORTADO]: ");
-            ParseAnoMes(ano, mes, buscar, registros);
-        }
-        else
-        {
-            // Prosseguir com o parse apenas dos CNPJs que sei que constarão no ano e mês em questão
-            Console.Write($"> [Cache ativo]: ");
-            ParseAnoMes(ano, mes, presentes, registros);
-        }
+        // Conclusão: prosseguir com o parse apenas dos CNPJs que sei que constarão no ano e mês em questão
+        Console.Write($"> [Cache ativo]: ");
+        ParseAnoMes(ano, mes, presentes, registros);        
 
         // Auxiliar
         static bool ConfirmarPresencaNoPeriodo(RegistroPresenca rp, int ano, int mes) => rp switch
