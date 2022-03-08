@@ -10,9 +10,8 @@ namespace FundosParser;
 public class Program
 {
 
-    // Estruturas principais:
-    private static List<string> _buscar = new();    // Lista de CNPJs a serem buscados
-    
+    // Lista de CNPJs a serem buscados    
+    private static List<string> _buscar = new();    
 
     static void Main(string[] args)
     {
@@ -37,27 +36,16 @@ public class Program
             cnpj = Console.ReadLine()?.Trim();
         }
         if (_buscar.Count < 1)
-        {            
-            throw new Exception("ERRO: nenhum CNPJ encontrado");
+        {
+            Console.WriteLine(" ## Nenhum CNPJ informado ##");
+            ParserCore.Usage();
         }
-
-
-        // Criação do Parser
-        ParserCore fp = new(opts, _buscar);
-        fp.MostrarParametros();
-        fp.MostrarParametrosResumidos();
-
-        // Criação e teste do cache de presenças
-        //fp.ConstruirCacheDePresencas();
-        //fp.MostrarCacheDePresencas();
-                
-        // Teste principal, com e sem uso do cache de presenças
-        // fp.ParsePeriodo(false);
-        fp.ParsePeriodo();
-        //fp.Processar();
-
-        
-
+        else
+        {
+            // Criação do Parser, injetando opções e lista de CNPJs
+            ParserCore fp = new(opts, _buscar);
+            fp.Processar();
+        }
 
     }
 

@@ -28,13 +28,66 @@ public class ParserCore
     }
 
 
+    // Execução do comando
+    public void Processar()
+    {
+        switch (_opts.Cmd)
+        {
+            case Comando.Help:  // Comando padrão, imprime modo de uso    
+                Usage();
+                break;
+            case Comando.Parametros:
+                MostrarParametros();
+                break;
+            case Comando.Processar:
+            case Comando.Parse: // Processa arquivos da CVM e escreve arquivo filtrado
+                ParsePeriodo();
+                if (_opts.EscreverSaida)
+                {
+                    EscreverNovoArquivo();
+                }
+                else
+                {
+                    Console.WriteLine("- Ignorando escrita do arquivo de saída");
+                }
+                break;
+            case Comando.Cache: // Constrói cache de presenças; REQUER NOME DE ARQUIVO, parâmetro -cache
+                if (string.IsNullOrEmpty(_opts.NomeArquivoCacheDePresencas))
+                {
+                    Console.WriteLine("### É preciso informar nome para o arquivo de cache a ser salvo com o parâmetro -cache=nome");
+                }
+                else
+                {
+                    ConstruirESalvarCacheDePresencas();
+                }
+                break;
+            case Comando.MostraCache: // Lê e exibe cache de presenças; REQUER NOME DE ARQUIVO, parâmetro -cache
+                if (string.IsNullOrEmpty(_opts.NomeArquivoCacheDePresencas))
+                {
+                    Console.WriteLine("### É preciso informar nome para o arquivo de cache a ser lido com o parâmetro -cache=nome");
+                }
+                else
+                {
+                    LerCacheDePresencasDeArquivo();
+                    MostrarCacheDePresencas();
+                }
+                break;
+            default:
+                throw new ArgumentException($"### Comando {_opts.Cmd} não implementado.");
+        }
+    }
+
+
     // Funções relativas ao cache de presenças
-    public void ConstruirCacheDePresencas()
-        => ConstruirCacheDePresencas(_opts.AnoInicial, _opts.MesInicial, _opts.AnoFinal, _opts.MesFinal);
-    
-    private void ConstruirCacheDePresencas(int anoInicial, int mesInicial, int anoFinal, int mesFinal)
+    private void ConstruirESalvarCacheDePresencas()
     {
         Console.WriteLine($"> Construindo cache de presenças");
+        
+        // Verifica se foi informado nome para arquivo, senão, cancela processamento
+        if (string.IsNullOrEmpty(_opts.NomeArquivoCacheDePresencas))
+        {
+            throw new Exception("### Não foi informado nome para o arquivo cache de presenças");
+        }
 
         // Resultado
         List<RegistroPresenca> result = new();
@@ -50,10 +103,10 @@ public class ParserCore
         watchTotal.Start();
 
         // Loop maior
-        for (int ano = anoInicial; ano <= anoFinal; ano++)
+        for (int ano = _opts.AnoInicial; ano <= _opts.AnoFinal; ano++)
         {
-            for (int mes = (ano == anoInicial ? mesInicial : 1);
-                     mes <= (ano == anoFinal ? mesFinal : 12); mes++)
+            for (int mes = (ano == _opts.AnoInicial ? _opts.MesInicial : 1);
+                     mes <= (ano == _opts.AnoFinal ? _opts.MesFinal : 12); mes++)
             {
                 // Contadores auxiliares
                 int contaDescartes = 0;
@@ -117,17 +170,28 @@ public class ParserCore
         SalvarCacheDePresencas();
     }
 
-    public void MostrarCacheDePresencas()
+    private void MostrarCacheDePresencas()
     {
-        Console.WriteLine("> Registro de Presenças:");
-        foreach (var item in _cachePresencas)
+        if (_cachePresencas != null)
         {
-            Console.WriteLine($"> {item}");
+            Console.WriteLine("> Registro de Presenças:");
+            foreach (var item in _cachePresencas)
+            {
+                Console.WriteLine($"> {item}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("> Cache de presenças vazio.");
         }
     }
 
     private void SalvarCacheDePresencas()
     {
+        if (string.IsNullOrEmpty(_opts.NomeArquivoCacheDePresencas))
+        {
+            throw new Exception("### Não foi informado nome para o arquivo cache de presenças");
+        }
         Console.WriteLine("> Salvando arquivo de presenças:");
         using (var writer = new StreamWriter($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
@@ -146,7 +210,7 @@ public class ParserCore
 
 
     // Funções principais  
-    public void ParsePeriodo()
+    private void ParsePeriodo()
     {
         // Verificar se datas estão válidas
         if (!ValidarPeriodo())
@@ -179,8 +243,7 @@ public class ParserCore
         // Fim
         watch.Stop();
         Console.WriteLine($"> Processados {mesesProcessados} arquivos, tempo: {watch.Elapsed}");
-        EscreverNovoArquivo();
-
+        
         // Auxiliares
         bool ValidarPeriodo()
         {
@@ -307,49 +370,65 @@ public class ParserCore
 
     private void EscreverNovoArquivo()
     {
-        if (_opts.EscreverSaida)
+        using (var writer = new StreamWriter($@"{_opts.PathEscrita}\{_opts.NomeArquivoFinal}.csv"))
+        using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
-            using (var writer = new StreamWriter($@"{_opts.PathEscrita}\{_opts.NomeArquivoFinal}.csv"))
-            using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
-            {
-                csv.WriteRecords(_cotas);
-            }            
-        }
-        else
-        {
-            Console.WriteLine("- Ignorando escrita do arquivo de saída");
-        }
+            csv.WriteRecords(_cotas);
+        }           
+        
     }
 
     
     // Funções auxiliares
     public static void Usage()
     {
-        Console.WriteLine(@"### ");
-        Console.WriteLine(@"### ATENÇÃO PARA A FORMA DE USO ###");
-        Console.WriteLine(@"### ");
-        Console.WriteLine(@"### FundosParser -op1=OPCAO1 -op2=OPCAO2 ... < c:\caminho\arquivo_cnpjs.txt");
-        Console.WriteLine(@"### ");
-        Console.WriteLine(@"### Ver as opções no arquivo ParserOptions.cs");
-        Console.WriteLine(@"### ");
+        Console.WriteLine(@" Forma de uso:");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" FundosParser < c:\caminho\cnpjs.txt -op1=OPCAO1 -op2=OPCAO2 ... -cmd=[COMANDO] ");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" * Arquivo de CNPJs dos fundos de interesse, texto simples. Deve");
+        Console.WriteLine(@"   constar um CNPJ em cada linha no formato 00.000.000/0000-00");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" * Opções op1, op2, etc:");
+        Console.WriteLine(@"   -anoi, -mesi: Ano inicial, mes inicial (padrão: Janeiro de 2017)");
+        Console.WriteLine(@"   -anof, -mesf: Ano final, mes final (padrão: data de hoje)");
+        Console.WriteLine(@"   -in:    Pasta de leitura dos arquivos .csv (dados originais) e");
+        Console.WriteLine(@"           também pasta de leitura e escrita do cache de presenças");
+        Console.WriteLine(@"           (padrão: c:\temp");
+        Console.WriteLine(@"   -out:   Pasta de escrita do arquivo filtrado resultante");
+        Console.WriteLine(@"           (padrão: c:\temp");
+        Console.WriteLine(@"   -nome:  Nome do arquivo filtrado (padrão _DADOS_FILTRADOS)");
+        Console.WriteLine(@"   -cache: Nome do arquivo cache de presenças (padrão: _cache)");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" * Comandos (Obrigatório):");
+        Console.WriteLine(@"   -cmd=Help: Imprime essa mensagem");
+        Console.WriteLine(@"   -cmd=Parametros: Apenas mostra os parâmetros, para conferência");
+        Console.WriteLine(@"   -cmd=Cache: Constrói cache de presenças. Exige parâmetro -cache");
+        Console.WriteLine(@"   -cmd=MostrarCache: Lê o cache salvo e mostra. Exige parâmetro -cache");
+        Console.WriteLine(@"   -cmd=Processar: Executa processamento e escreve arquivo filtrado");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" ");
     }    
-
-    public void MostrarParametrosResumidos()
-    {
-        // Funcionalidade
-        Console.WriteLine($"> Iniciando com Ano-Mes-Inicial:  {_opts.AnoInicial:0000}-{_opts.MesInicial:00}");
-        Console.WriteLine($">               Ano-Mes-Final:    {_opts.AnoFinal:0000}-{_opts.MesFinal:00}");
-        Console.WriteLine($">               Pasta de leitura: {_opts.PathLeitura}");
-        Console.WriteLine($">               Pasta de escrita: {_opts.PathEscrita}");
-        Console.WriteLine($">               Arquivo de saída: {_opts.NomeArquivoFinal}.csv");
-        Console.WriteLine($">               Arquivo de cache: {_opts.NomeArquivoCacheDePresencas}.csv");
-    }
 
     public void MostrarParametros()
     {
-        // Funcionalidade
         Console.WriteLine($"> Parâmetros:");
-        Console.WriteLine($"> {_opts}");
+        Console.WriteLine($">   Ano-Mes-Inicial:    {_opts.AnoInicial:0000}-{_opts.MesInicial:00}");
+        Console.WriteLine($">   Ano-Mes-Final:      {_opts.AnoFinal:0000}-{_opts.MesFinal:00}");
+        Console.WriteLine($">   Pasta de leitura:   {_opts.PathLeitura}");
+        Console.WriteLine($">   Pasta de escrita:   {_opts.PathEscrita}");
+        Console.WriteLine($">   Arq. .csv de saída: {_opts.NomeArquivoFinal}");
+        Console.WriteLine($">   Arq. .csv de cache: {_opts.NomeArquivoCacheDePresencas}");
+    }
+
+    public void MostrarParametrosBrutos()
+    {
+        // Converte diretamente objeto de opções
+        Console.Write($"> ");
+        Console.WriteLine(_opts);
     }
 
     public void MostrarRegistrosCnpj(string cnpj)

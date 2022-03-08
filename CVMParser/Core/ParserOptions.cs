@@ -5,10 +5,11 @@ public readonly record struct ParserOptions()
 
     public enum Comando
     {
-        Cache,
-        MostraCache,
-        Parse,
-        Help
+        Help,             // Usage
+        Parametros,       // Exibe parâmetros
+        Cache,            // Cria cache de presenças
+        MostraCache,      // Mostra cache de presenças
+        Parse, Processar, // PROCESSAMENTO PRINCIPAL, gera arquivo filtrado (objetivo)        
     }
 
     // CONSTANTES
