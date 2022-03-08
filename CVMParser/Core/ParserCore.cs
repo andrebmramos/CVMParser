@@ -213,7 +213,7 @@ public class ParserCore
     private void ParsePeriodo()
     {
         // Verificar se datas estão válidas
-        if (!ValidarPeriodo())
+        if (!_opts.ValidarPeriodo())
         {
             throw new ArgumentException("Datas fornecidas inválidas");
         }
@@ -242,21 +242,7 @@ public class ParserCore
         }
         // Fim
         watch.Stop();
-        Console.WriteLine($"> Processados {mesesProcessados} arquivos, tempo: {watch.Elapsed}");
-        
-        // Auxiliares
-        bool ValidarPeriodo()
-        {
-            // Valida a lógica 
-            return ValidarAno(_opts.AnoInicial) && ValidarAno(_opts.AnoFinal) &&         // Ano entre min e max
-                   ValidarMes(_opts.MesInicial) && ValidarMes(_opts.MesFinal) &&         // Mês entre 1 e 12
-                   _opts.AnoFinal >= _opts.AnoInicial &&                                 // Ano Final >= inicial
-                   (_opts.AnoInicial != _opts.AnoFinal ? true : _opts.MesFinal >= _opts.MesInicial); // Se mesmo ano, exige mêsFinal >= Inicial
-
-            // Funções internas auxiliares
-        }
-        static bool ValidarAno(int ano) => ano >= ANO_MIN && ano <= ANO_MAX;
-        static bool ValidarMes(int mes) => 1 <= mes && mes <= 12;
+        Console.WriteLine($"> Processados {mesesProcessados} arquivos, tempo: {watch.Elapsed}");        
     }
     
     private void ParseAnoMes(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
@@ -409,6 +395,17 @@ public class ParserCore
         Console.WriteLine(@"   -cmd=Cache: Constrói cache de presenças. Exige parâmetro -cache");
         Console.WriteLine(@"   -cmd=MostrarCache: Lê o cache salvo e mostra. Exige parâmetro -cache");
         Console.WriteLine(@"   -cmd=Processar: Executa processamento e escreve arquivo filtrado");
+        Console.WriteLine(@"        O processamento fará uso do cache se arquivo for informado ");
+        Console.WriteLine(@"        com parÂmetro -cache=nome");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" ");
+        Console.WriteLine(@" * Sobre o Cache: recurso em desenvolvimento, ganho de tempo mínimo"); 
+        Console.WriteLine(@"   é seguro não usar.");
+        Console.WriteLine(@" "); 
+        Console.WriteLine(@" * Sobre os arquivos de dados .csv: são arquivos mensais disponibizados");
+        Console.WriteLine(@"   pela CVM que devem ser baixados e colocados na pasta especificada com");
+        Console.WriteLine(@"   o parâmetro -in. Em março de 2022, arquivos podem ser baixados de");
+        Console.WriteLine(@"   http://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/");
         Console.WriteLine(@" ");
         Console.WriteLine(@" ");
     }    

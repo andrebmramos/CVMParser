@@ -61,4 +61,17 @@ public readonly record struct ParserOptions()
 
     };
 
+    public bool ValidarPeriodo()
+    {
+        // Valida a lógica 
+        return ValidarAno(AnoInicial) && ValidarAno(AnoFinal) &&         // Ano entre min e max
+               ValidarMes(MesInicial) && ValidarMes(MesFinal) &&         // Mês entre 1 e 12
+               AnoFinal >= AnoInicial &&                                 // Ano Final >= inicial
+               (AnoInicial != AnoFinal ? true : MesFinal >= MesInicial); // Se mesmo ano, exige mêsFinal >= Inicial
+
+        // Funções internas auxiliares
+        static bool ValidarAno(int ano) => ano >= ANO_MIN && ano <= ANO_MAX;
+        static bool ValidarMes(int mes) => 1 <= mes && mes <= 12;
+    }
+
 }
