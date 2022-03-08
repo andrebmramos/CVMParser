@@ -1,13 +1,11 @@
 ﻿using CsvHelper;
 using CsvHelper.Configuration;
 using System.Globalization;
-
 using FundosParser.Modelos;
-
 using static FundosParser.Core.ParserOptions;
 
-namespace FundosParser.Core;
 
+namespace FundosParser.Core;
 
 
 public class ParserCore
@@ -81,7 +79,7 @@ public class ParserCore
     // Funções relativas ao cache de presenças
     private void ConstruirESalvarCacheDePresencas()
     {
-        Console.WriteLine($"> Construindo cache de presenças");
+        Console.WriteLine($"> Construindo cache de presenças, buscando {_buscar.Count} fundos");
         
         // Verifica se foi informado nome para arquivo, senão, cancela processamento
         if (string.IsNullOrEmpty(_opts.NomeArquivoCacheDePresencas))
@@ -161,9 +159,16 @@ public class ParserCore
                     contaDescartesTotal += contaDescartes;
                     contaNovosTotal += contaNovos;
                     contaArquivosProcessadosTotal++;
+                    if (contaNovosTotal>=_buscar.Count)
+                    {
+                        // Caso já tenha encontrado todos os fundos, não preciso
+                        // prosseguir e uso goto para sair dos loops aninhados
+                        goto TodosEncontrados;
+                    }
                 }
             }
         }
+    TodosEncontrados:
         watchTotal.Stop();
         _cachePresencas = result;
         Console.WriteLine($"> Concluída busca em {contaArquivosProcessadosTotal} arquivos; Tempo: {watchTotal.Elapsed}, Encontrados {contaNovosTotal}; Descartadas {contaDescartesTotal} leituras");

@@ -1,7 +1,5 @@
 ﻿using FundosParser.Core;
-using FundosParser.Modelos;
 using Microsoft.Extensions.Configuration; // Requer: Install-Package Microsoft.Extensions.Hosting
-
 
 
 namespace FundosParser;
