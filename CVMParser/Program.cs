@@ -11,8 +11,7 @@ public class Program
 {
 
     // Estruturas principais:
-    private static List<RegistroCotas> _registros = new(); // Lista de registros a serem armazenados
-    private static List<string>   _buscar = new();    // Lista de CNPJs a serem buscados
+    private static List<string> _buscar = new();    // Lista de CNPJs a serem buscados
     
 
     static void Main(string[] args)

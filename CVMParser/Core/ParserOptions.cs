@@ -2,7 +2,15 @@
 
 public readonly record struct ParserOptions()
 {
-    
+
+    public enum Comando
+    {
+        Cache,
+        MostraCache,
+        Parse,
+        Help
+    }
+
     // CONSTANTES
     // Parametrização do arquivo CSV
     public readonly static string HEADER_Cnpj = "CNPJ_FUNDO";
@@ -27,8 +35,11 @@ public readonly record struct ParserOptions()
     public string NomeArquivoCacheDePresencas { get; init; } = ""; // NULO equivale a trabalhar sem cache
 
     // Flags
-    public bool EscreverSaida { get; init; } = true;
-    
+    public bool EscreverSaida { get; init; } = true;   // Auxiliar para inibir escrita de arquivo durante desenvolvimento
+
+    // Comando
+    public Comando Cmd { get; init; } = Comando.Help;
+
     // Nomes curtos, de modo usar, por exemplo
     // comando -in="c:\temp" -out="c:\saida"
     public readonly static Dictionary<string, string> switchMappings = new()
@@ -44,7 +55,9 @@ public readonly record struct ParserOptions()
 
         { "-nome", nameof(NomeArquivoFinal) },
         { "-cache", nameof(NomeArquivoCacheDePresencas) },
-        
+
+        { "-cmd", nameof(Cmd) },
+
     };
 
 }

@@ -323,7 +323,7 @@ public class ParserCore
 
     
     // Funções auxiliares
-    public void Usage()
+    public static void Usage()
     {
         Console.WriteLine(@"### ");
         Console.WriteLine(@"### ATENÇÃO PARA A FORMA DE USO ###");
