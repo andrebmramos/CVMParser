@@ -361,12 +361,21 @@ public class ParserCore
 
     private void EscreverNovoArquivo()
     {
-        using (var writer = new StreamWriter($@"{_opts.PathEscrita}\{_opts.NomeArquivoFinal}.csv"))
+        // Tratamento: se não foi especificado path de escrita, usar mesmo de leitura
+        string path;
+        if (_opts.PathEscrita=="")
+        {
+            path = _opts.PathLeitura;
+        }
+        else
+        {
+            path= _opts.PathEscrita;
+        }
+        using (var writer = new StreamWriter($@"{path}\{_opts.NomeArquivoFinal}.csv"))
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
             csv.WriteRecords(_cotas);
-        }           
-        
+        }                   
     }
 
     
@@ -387,9 +396,10 @@ public class ParserCore
         Console.WriteLine(@"   -anof, -mesf: Ano final, mes final (padrão: data de hoje)");
         Console.WriteLine(@"   -in:    Pasta de leitura dos arquivos .csv (dados originais) e");
         Console.WriteLine(@"           também pasta de leitura e escrita do cache de presenças");
-        Console.WriteLine(@"           (padrão: c:\temp");
+        Console.WriteLine(@"           usar -in=. para trabalhar na pasta atual");
+        Console.WriteLine(@"           (padrão: c:\FundosParser)");
         Console.WriteLine(@"   -out:   Pasta de escrita do arquivo filtrado resultante");
-        Console.WriteLine(@"           (padrão: c:\temp");
+        Console.WriteLine(@"           (padrão: escreve na mesma pasta de leitura)");
         Console.WriteLine(@"   -nome:  Nome do arquivo filtrado (padrão _DADOS_FILTRADOS)");
         Console.WriteLine(@"   -cache: Nome do arquivo cache de presenças (padrão: _cache)");
         Console.WriteLine(@" ");
