@@ -3,7 +3,7 @@ using CsvHelper.Configuration;
 using System.Globalization;
 using FundosParser.Modelos;
 using static FundosParser.Core.ParserOptions;
-
+using System.Text;
 
 namespace FundosParser.Core;
 
@@ -42,7 +42,10 @@ public class ParserCore
                 ParsePeriodo();
                 if (_opts.EscreverSaida)
                 {
+                    System.Console.WriteLine("- Escrevendo saída em forma de vetores");
                     EscreverNovoArquivo();
+                    // System.Console.WriteLine("- Escrevendo saída em dupla tabela");
+                    // EscreverTabelonas();
                 }
                 else
                 {
@@ -70,8 +73,101 @@ public class ParserCore
                     MostrarCacheDePresencas();
                 }
                 break;
+            case Comando.Test: 
+                ParsePeriodo();
+                if (_opts.EscreverSaida)
+                {
+                    System.Console.WriteLine("- Escrevendo saída em forma de vetores");
+                    EscreverNovoArquivo();
+                    System.Console.WriteLine("- Escrevendo saída em dupla tabela");
+                    EscreverTabelonas();
+                }
+                else
+                {
+                    Console.WriteLine("- Ignorando escrita do arquivo de saída");
+                }
+                break;
             default:
                 throw new ArgumentException($"### Comando {_opts.Cmd} não implementado.");
+        }
+    }
+    
+
+    private void EscreverTabelonas()
+    {
+        // Tratamento: se não foi especificado path de escrita, usar mesmo de leitura
+        string path;
+        if (_opts.PathEscrita=="")
+        {
+            path = _opts.PathLeitura;
+        }
+        else
+        {
+            path= _opts.PathEscrita;
+        }
+
+        // Dois arquivos simultaneos, cotas e variações diárias
+        using var wcotas  = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_cotas.csv");     // CUIDADO, \
+        using var wvardia = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_vardia.csv"); 
+        
+        // Listas de CNPJs e Datas
+        var cnpjs = _cotas.Select(c => c.Cnpj).Distinct().OrderBy(i=>i).ToList();
+        var datas = _cotas.Select(c => c.Data).Distinct().OrderBy(i=>i).ToList();
+
+        // Auxiliares
+        RegistroCotas? rcota;                 // um único "registro de cotas" (record com data, cnpj, cota, num cotistas)
+        double?[] cotahoje, cotaontem;        // vetores das cotas de todos os fundos nas data de hoje e ontem para calcular variação diária
+        cotahoje  = new double?[cnpjs.Count]; // preciso inicializar o vetor "hoje" (**)
+
+        // Geração da 1a linha (cabeçalho) dos 2 arquivos, onde em ambos se lê "Data" e os CNPJs
+        wcotas.Write("Data");
+        wvardia.Write("Data");
+        foreach (var cnpj in cnpjs)
+        {
+            wcotas.Write($";{cnpj}");
+            wvardia.Write($";{cnpj}");
+        }
+        wcotas.Write("\n");  
+        wvardia.Write("\n");   
+
+        // Gera linhas, data por data, com cotas e variações diárias
+        foreach (var data in datas)
+        {
+            // Primeiro valor em ambos os arquivos é a própria data
+            wcotas.Write(data);
+            wvardia.Write(data);
+            // Vetores auxiliares: "ontem = hoje", "hoje será recriado". 
+            // Na primeira interação, copia-se o vetor vazio criado em (**), dispensando tratamento especial
+            cotaontem = cotahoje;
+            cotahoje  = new double?[cnpjs.Count];
+            // Loop por todos os CNPJs, indexados por i
+            for(var i=0; i<cnpjs.Count; i++)
+            {
+                var cnpj = cnpjs[i];
+                rcota = _cotas.SingleOrDefault(c => c.Data.Equals(data) && c.Cnpj.Equals(cnpj)); // ### PONTO CRÍTICO. PRECISO OTIMIZAR!
+                if (rcota is not null) // caso registro existente (não nulo)
+                {
+                    double cota = rcota.Cota;     // armazeno a cota para uso imediato
+                    cotahoje[i] = cota;           // armazeno cópia no vetor, que será usada como "cota de ontem" na pŕoxima iteração
+                    wcotas.Write($";{cota}");     // escrevo cota no arquivo de cotas
+                    if (cotaontem[i] is not null) // calculo e escrevo variação diária apenas se valor "de ontem" não nulo, senão escrevo ";"
+                    {
+                        wvardia.Write($";{cota/cotaontem[i]-1}");
+                    }
+                    else
+                    {
+                        wvardia.Write(";");
+                    }
+                }   
+                else // caso de registro nulo (inexistente), escrever apenas ";"
+                {
+                    wcotas.Write(";");
+                    wvardia.Write(";");
+                }
+            }
+            // Fim da linha nos 2 arquivos de saída
+            wcotas.Write("\n"); 
+            wvardia.Write("\n"); 
         }
     }
 
