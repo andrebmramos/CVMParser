@@ -111,7 +111,7 @@ public class ParserCore
                 int contaNovos = 0;
 
                 // Identifico arquivo CSV
-                string fileName = $@"{_opts.PathLeitura}\inf_diario_fi_{ano:0000}{mes:00}.csv";
+                string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv"; // CUIDADO, \
                 Console.Write($"> Buscando CNPJs em {fileName}...");
 
                 // Crio recursos
@@ -198,7 +198,7 @@ public class ParserCore
             throw new Exception("### Não foi informado nome para o arquivo cache de presenças");
         }
         Console.WriteLine("> Salvando arquivo de presenças:");
-        using (var writer = new StreamWriter($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
+        using (var writer = new StreamWriter($@"{_opts.PathLeitura}{_opts.NomeArquivoCacheDePresencas}.csv"))// CUIDADO, \
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
             csv.WriteRecords(_cachePresencas);
@@ -207,7 +207,7 @@ public class ParserCore
 
     private void LerCacheDePresencasDeArquivo()
     {       
-        using (var reader = new StreamReader($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
+        using (var reader = new StreamReader($@"{_opts.PathLeitura}{_opts.NomeArquivoCacheDePresencas}.csv"))// CUIDADO, \
         using (var csv = new CsvReader(reader,
                                        new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
             _cachePresencas = csv.GetRecords<RegistroPresenca>().ToList();
@@ -253,67 +253,74 @@ public class ParserCore
     private void ParseAnoMes(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
     {
         // Identifico arquivo de dados da CVM do respectivo ano e mês
-        string fileName = $@"{_opts.PathLeitura}\inf_diario_fi_{ano:0000}{mes:00}.csv";
+        string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv";// CUIDADO, \
         Console.Write($"> Processando arquivo {fileName}...");
 
         // Variáveis auxiliares para tratar quantos CNPJs foram identificados
         int contaAlvosEncontrados = 0;
         string ultimoAlvoEncontrado = "";
 
-
-        using (var reader = new StreamReader(fileName))
-        using (var csv = new CsvReader(reader,
-                                       new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
-        // InvariantCulture não identifica ";" usado no CSV, enquanto que Cultura BR
-        // não identifica "." decimal, portanto altero para invariante MAS
-        // especifico o delimitador
+        try
         {
-            // Leitura do cabeçalho exige esses dois passos
-            csv.Read(); csv.ReadHeader();
-            // Inicio cronômetro antes do loop
-            var watch = new System.Diagnostics.Stopwatch();
-            watch.Start();
-            while (csv.Read())
+            using (var reader = new StreamReader(fileName))
+            using (var csv = new CsvReader(reader,
+                                        new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
+            // InvariantCulture não identifica ";" usado no CSV, enquanto que Cultura BR
+            // não identifica "." decimal, portanto altero para invariante MAS
+            // especifico o delimitador
             {
-                // Leio próximo CNPJ
-                string cnpj = csv.GetField(HEADER_Cnpj);
-                if (!buscar.Contains(cnpj) && contaAlvosEncontrados < buscar.Count)
+                // Leitura do cabeçalho exige esses dois passos
+                csv.Read(); csv.ReadHeader();
+                // Inicio cronômetro antes do loop
+                var watch = new System.Diagnostics.Stopwatch();
+                watch.Start();
+                while (csv.Read())
                 {
-                    // Caso não seja buscado, mas ainda não tenha encontrado todos, continue para proxima iteração do loop 
-                    // ATENÇÃO: se eu conseguir saber à priori em que ano e mês começam as cotas para os CNPJ em busca, posso evitar
-                    // que fique procurando desnecessariamente até o final de arquivos onde o fundo não existe. Para implementar isso,
-                    // precisa de um tratamento à parte dos dados.
-                    continue;
-                }
-                else if (!buscar.Contains(cnpj) && contaAlvosEncontrados >= buscar.Count)
-                {
-                    // Caso não seja buscado, mas já tenha encontrado todos da lista, quebrar loop (desnecessário continuar percorrendo arquivo)
-                    break;
-                }
-                else
-                {
-                    // Se cheguei aqui, estou na linha de um CNPJ buscado.
-                    // Só vou incrementar o contador de alvos encontrados se o CNPJ dessa linha
-                    // for diferente do último alvo encontrado, ou seja, "encontrei novo alvo"
-                    if (cnpj != ultimoAlvoEncontrado)
+                    // Leio próximo CNPJ
+                    string cnpj = csv.GetField(HEADER_Cnpj);
+                    if (!buscar.Contains(cnpj) && contaAlvosEncontrados < buscar.Count)
                     {
-                        contaAlvosEncontrados++;
-                        ultimoAlvoEncontrado = cnpj;
+                        // Caso não seja buscado, mas ainda não tenha encontrado todos, continue para proxima iteração do loop 
+                        // ATENÇÃO: se eu conseguir saber à priori em que ano e mês começam as cotas para os CNPJ em busca, posso evitar
+                        // que fique procurando desnecessariamente até o final de arquivos onde o fundo não existe. Para implementar isso,
+                        // precisa de um tratamento à parte dos dados.
+                        continue;
                     }
-                    // Prossigo lendo demais campos, crio o registro e armazeno na lista de resultados
-                    var registro = new RegistroCotas
-                    (
-                        Cnpj: cnpj,
-                        Data: csv.GetField<DateOnly>(HEADER_Data),
-                        Cota: csv.GetField<double>(HEADER_Cota),
-                        NumCotistas: csv.GetField<int>(HEADER_NumCotistas)
-                    );
-                    registros.Add(registro);
+                    else if (!buscar.Contains(cnpj) && contaAlvosEncontrados >= buscar.Count)
+                    {
+                        // Caso não seja buscado, mas já tenha encontrado todos da lista, quebrar loop (desnecessário continuar percorrendo arquivo)
+                        break;
+                    }
+                    else
+                    {
+                        // Se cheguei aqui, estou na linha de um CNPJ buscado.
+                        // Só vou incrementar o contador de alvos encontrados se o CNPJ dessa linha
+                        // for diferente do último alvo encontrado, ou seja, "encontrei novo alvo"
+                        if (cnpj != ultimoAlvoEncontrado)
+                        {
+                            contaAlvosEncontrados++;
+                            ultimoAlvoEncontrado = cnpj;
+                        }
+                        // Prossigo lendo demais campos, crio o registro e armazeno na lista de resultados
+                        var registro = new RegistroCotas
+                        (
+                            Cnpj: cnpj,
+                            Data: csv.GetField<DateOnly>(HEADER_Data),
+                            Cota: csv.GetField<double>(HEADER_Cota),
+                            NumCotistas: csv.GetField<int>(HEADER_NumCotistas)
+                        );
+                        registros.Add(registro);
+                    }
                 }
+                watch.Stop();
+                Console.WriteLine($"concluído, tempo: {watch.Elapsed}, encontrados {contaAlvosEncontrados} de {buscar.Count} CNPJs");
             }
-            watch.Stop();
-            Console.WriteLine($"concluído, tempo: {watch.Elapsed}, encontrados {contaAlvosEncontrados} de {buscar.Count} CNPJs");
         }
+        catch (System.Exception e)
+        {
+            Console.WriteLine($"ERRO ({e.Message}). Arquivo ignorado.");
+        }
+        
     }
 
     private void ParseAnoMesComCache(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
@@ -371,7 +378,7 @@ public class ParserCore
         {
             path= _opts.PathEscrita;
         }
-        using (var writer = new StreamWriter($@"{path}\{_opts.NomeArquivoFinal}.csv"))
+        using (var writer = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}.csv"))// CUIDADO, \
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
             csv.WriteRecords(_cotas);
