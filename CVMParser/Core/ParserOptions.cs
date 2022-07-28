@@ -30,7 +30,7 @@ public readonly record struct ParserOptions()
     public int MesFinal { get; init; } = DateTime.Today.Month;
 
     // Caminhos dos arquivos
-    public string PathLeitura { get; init; } = @"c:\FundosParser";  // Pasta dos arquivos baixdos da CVM, padrão c:\temp
+    public string PathLeitura { get; init; } = @"c:\FundosParser\";  // Pasta dos arquivos baixdos da CVM, padrão c:\temp
     public string PathEscrita { get; init; } = "";  // Pasta para escrita do arquivo filtrado (saída). TRATAMENTO: se "", usar PathLeitura
     public string NomeArquivoFinal { get; init; } = "_DADOS_FILTRADOS";
     public string NomeArquivoCacheDePresencas { get; init; } = ""; // NULO equivale a trabalhar sem cache

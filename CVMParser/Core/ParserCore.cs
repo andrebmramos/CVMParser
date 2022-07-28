@@ -397,7 +397,7 @@ public class ParserCore
         Console.WriteLine(@"   -in:    Pasta de leitura dos arquivos .csv (dados originais) e");
         Console.WriteLine(@"           também pasta de leitura e escrita do cache de presenças");
         Console.WriteLine(@"           usar -in=. para trabalhar na pasta atual");
-        Console.WriteLine(@"           (padrão: c:\FundosParser)");
+        Console.WriteLine(@"           (padrão: c:\FundosParser\)");
         Console.WriteLine(@"   -out:   Pasta de escrita do arquivo filtrado resultante");
         Console.WriteLine(@"           (padrão: escreve na mesma pasta de leitura)");
         Console.WriteLine(@"   -nome:  Nome do arquivo filtrado (padrão _DADOS_FILTRADOS)");
