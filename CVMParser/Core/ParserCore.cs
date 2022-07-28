@@ -3,7 +3,7 @@ using CsvHelper.Configuration;
 using System.Globalization;
 using FundosParser.Modelos;
 using static FundosParser.Core.ParserOptions;
-
+using System.Text;
 
 namespace FundosParser.Core;
 
@@ -42,7 +42,10 @@ public class ParserCore
                 ParsePeriodo();
                 if (_opts.EscreverSaida)
                 {
+                    System.Console.WriteLine("- Escrevendo saída em forma de vetores");
                     EscreverNovoArquivo();
+                    // System.Console.WriteLine("- Escrevendo saída em dupla tabela");
+                    // EscreverTabelonas();
                 }
                 else
                 {
@@ -70,8 +73,101 @@ public class ParserCore
                     MostrarCacheDePresencas();
                 }
                 break;
+            case Comando.Test: 
+                ParsePeriodo();
+                if (_opts.EscreverSaida)
+                {
+                    System.Console.WriteLine("- Escrevendo saída em forma de vetores");
+                    EscreverNovoArquivo();
+                    System.Console.WriteLine("- Escrevendo saída em dupla tabela");
+                    EscreverTabelonas();
+                }
+                else
+                {
+                    Console.WriteLine("- Ignorando escrita do arquivo de saída");
+                }
+                break;
             default:
                 throw new ArgumentException($"### Comando {_opts.Cmd} não implementado.");
+        }
+    }
+    
+
+    private void EscreverTabelonas()
+    {
+        // Tratamento: se não foi especificado path de escrita, usar mesmo de leitura
+        string path;
+        if (_opts.PathEscrita=="")
+        {
+            path = _opts.PathLeitura;
+        }
+        else
+        {
+            path= _opts.PathEscrita;
+        }
+
+        // Dois arquivos simultaneos, cotas e variações diárias
+        using var wcotas  = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_cotas.csv");     // CUIDADO, \
+        using var wvardia = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_vardia.csv"); 
+        
+        // Listas de CNPJs e Datas
+        var cnpjs = _cotas.Select(c => c.Cnpj).Distinct().OrderBy(i=>i).ToList();
+        var datas = _cotas.Select(c => c.Data).Distinct().OrderBy(i=>i).ToList();
+
+        // Auxiliares
+        RegistroCotas? rcota;                 // um único "registro de cotas" (record com data, cnpj, cota, num cotistas)
+        double?[] cotahoje, cotaontem;        // vetores das cotas de todos os fundos nas data de hoje e ontem para calcular variação diária
+        cotahoje  = new double?[cnpjs.Count]; // preciso inicializar o vetor "hoje" (**)
+
+        // Geração da 1a linha (cabeçalho) dos 2 arquivos, onde em ambos se lê "Data" e os CNPJs
+        wcotas.Write("Data");
+        wvardia.Write("Data");
+        foreach (var cnpj in cnpjs)
+        {
+            wcotas.Write($";{cnpj}");
+            wvardia.Write($";{cnpj}");
+        }
+        wcotas.Write("\n");  
+        wvardia.Write("\n");   
+
+        // Gera linhas, data por data, com cotas e variações diárias
+        foreach (var data in datas)
+        {
+            // Primeiro valor em ambos os arquivos é a própria data
+            wcotas.Write(data);
+            wvardia.Write(data);
+            // Vetores auxiliares: "ontem = hoje", "hoje será recriado". 
+            // Na primeira interação, copia-se o vetor vazio criado em (**), dispensando tratamento especial
+            cotaontem = cotahoje;
+            cotahoje  = new double?[cnpjs.Count];
+            // Loop por todos os CNPJs, indexados por i
+            for(var i=0; i<cnpjs.Count; i++)
+            {
+                var cnpj = cnpjs[i];
+                rcota = _cotas.SingleOrDefault(c => c.Data.Equals(data) && c.Cnpj.Equals(cnpj)); // ### PONTO CRÍTICO. PRECISO OTIMIZAR!
+                if (rcota is not null) // caso registro existente (não nulo)
+                {
+                    double cota = rcota.Cota;     // armazeno a cota para uso imediato
+                    cotahoje[i] = cota;           // armazeno cópia no vetor, que será usada como "cota de ontem" na pŕoxima iteração
+                    wcotas.Write($";{cota}");     // escrevo cota no arquivo de cotas
+                    if (cotaontem[i] is not null) // calculo e escrevo variação diária apenas se valor "de ontem" não nulo, senão escrevo ";"
+                    {
+                        wvardia.Write($";{cota/cotaontem[i]-1}");
+                    }
+                    else
+                    {
+                        wvardia.Write(";");
+                    }
+                }   
+                else // caso de registro nulo (inexistente), escrever apenas ";"
+                {
+                    wcotas.Write(";");
+                    wvardia.Write(";");
+                }
+            }
+            // Fim da linha nos 2 arquivos de saída
+            wcotas.Write("\n"); 
+            wvardia.Write("\n"); 
         }
     }
 
@@ -111,7 +207,7 @@ public class ParserCore
                 int contaNovos = 0;
 
                 // Identifico arquivo CSV
-                string fileName = $@"{_opts.PathLeitura}\inf_diario_fi_{ano:0000}{mes:00}.csv";
+                string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv"; // CUIDADO, \
                 Console.Write($"> Buscando CNPJs em {fileName}...");
 
                 // Crio recursos
@@ -198,7 +294,7 @@ public class ParserCore
             throw new Exception("### Não foi informado nome para o arquivo cache de presenças");
         }
         Console.WriteLine("> Salvando arquivo de presenças:");
-        using (var writer = new StreamWriter($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
+        using (var writer = new StreamWriter($@"{_opts.PathLeitura}{_opts.NomeArquivoCacheDePresencas}.csv"))// CUIDADO, \
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
             csv.WriteRecords(_cachePresencas);
@@ -207,7 +303,7 @@ public class ParserCore
 
     private void LerCacheDePresencasDeArquivo()
     {       
-        using (var reader = new StreamReader($@"{_opts.PathLeitura}\{_opts.NomeArquivoCacheDePresencas}.csv"))
+        using (var reader = new StreamReader($@"{_opts.PathLeitura}{_opts.NomeArquivoCacheDePresencas}.csv"))// CUIDADO, \
         using (var csv = new CsvReader(reader,
                                        new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
             _cachePresencas = csv.GetRecords<RegistroPresenca>().ToList();
@@ -253,67 +349,74 @@ public class ParserCore
     private void ParseAnoMes(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
     {
         // Identifico arquivo de dados da CVM do respectivo ano e mês
-        string fileName = $@"{_opts.PathLeitura}\inf_diario_fi_{ano:0000}{mes:00}.csv";
+        string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv";// CUIDADO, \
         Console.Write($"> Processando arquivo {fileName}...");
 
         // Variáveis auxiliares para tratar quantos CNPJs foram identificados
         int contaAlvosEncontrados = 0;
         string ultimoAlvoEncontrado = "";
 
-
-        using (var reader = new StreamReader(fileName))
-        using (var csv = new CsvReader(reader,
-                                       new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
-        // InvariantCulture não identifica ";" usado no CSV, enquanto que Cultura BR
-        // não identifica "." decimal, portanto altero para invariante MAS
-        // especifico o delimitador
+        try
         {
-            // Leitura do cabeçalho exige esses dois passos
-            csv.Read(); csv.ReadHeader();
-            // Inicio cronômetro antes do loop
-            var watch = new System.Diagnostics.Stopwatch();
-            watch.Start();
-            while (csv.Read())
+            using (var reader = new StreamReader(fileName))
+            using (var csv = new CsvReader(reader,
+                                        new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
+            // InvariantCulture não identifica ";" usado no CSV, enquanto que Cultura BR
+            // não identifica "." decimal, portanto altero para invariante MAS
+            // especifico o delimitador
             {
-                // Leio próximo CNPJ
-                string cnpj = csv.GetField(HEADER_Cnpj);
-                if (!buscar.Contains(cnpj) && contaAlvosEncontrados < buscar.Count)
+                // Leitura do cabeçalho exige esses dois passos
+                csv.Read(); csv.ReadHeader();
+                // Inicio cronômetro antes do loop
+                var watch = new System.Diagnostics.Stopwatch();
+                watch.Start();
+                while (csv.Read())
                 {
-                    // Caso não seja buscado, mas ainda não tenha encontrado todos, continue para proxima iteração do loop 
-                    // ATENÇÃO: se eu conseguir saber à priori em que ano e mês começam as cotas para os CNPJ em busca, posso evitar
-                    // que fique procurando desnecessariamente até o final de arquivos onde o fundo não existe. Para implementar isso,
-                    // precisa de um tratamento à parte dos dados.
-                    continue;
-                }
-                else if (!buscar.Contains(cnpj) && contaAlvosEncontrados >= buscar.Count)
-                {
-                    // Caso não seja buscado, mas já tenha encontrado todos da lista, quebrar loop (desnecessário continuar percorrendo arquivo)
-                    break;
-                }
-                else
-                {
-                    // Se cheguei aqui, estou na linha de um CNPJ buscado.
-                    // Só vou incrementar o contador de alvos encontrados se o CNPJ dessa linha
-                    // for diferente do último alvo encontrado, ou seja, "encontrei novo alvo"
-                    if (cnpj != ultimoAlvoEncontrado)
+                    // Leio próximo CNPJ
+                    string cnpj = csv.GetField(HEADER_Cnpj);
+                    if (!buscar.Contains(cnpj) && contaAlvosEncontrados < buscar.Count)
                     {
-                        contaAlvosEncontrados++;
-                        ultimoAlvoEncontrado = cnpj;
+                        // Caso não seja buscado, mas ainda não tenha encontrado todos, continue para proxima iteração do loop 
+                        // ATENÇÃO: se eu conseguir saber à priori em que ano e mês começam as cotas para os CNPJ em busca, posso evitar
+                        // que fique procurando desnecessariamente até o final de arquivos onde o fundo não existe. Para implementar isso,
+                        // precisa de um tratamento à parte dos dados.
+                        continue;
                     }
-                    // Prossigo lendo demais campos, crio o registro e armazeno na lista de resultados
-                    var registro = new RegistroCotas
-                    (
-                        Cnpj: cnpj,
-                        Data: csv.GetField<DateOnly>(HEADER_Data),
-                        Cota: csv.GetField<double>(HEADER_Cota),
-                        NumCotistas: csv.GetField<int>(HEADER_NumCotistas)
-                    );
-                    registros.Add(registro);
+                    else if (!buscar.Contains(cnpj) && contaAlvosEncontrados >= buscar.Count)
+                    {
+                        // Caso não seja buscado, mas já tenha encontrado todos da lista, quebrar loop (desnecessário continuar percorrendo arquivo)
+                        break;
+                    }
+                    else
+                    {
+                        // Se cheguei aqui, estou na linha de um CNPJ buscado.
+                        // Só vou incrementar o contador de alvos encontrados se o CNPJ dessa linha
+                        // for diferente do último alvo encontrado, ou seja, "encontrei novo alvo"
+                        if (cnpj != ultimoAlvoEncontrado)
+                        {
+                            contaAlvosEncontrados++;
+                            ultimoAlvoEncontrado = cnpj;
+                        }
+                        // Prossigo lendo demais campos, crio o registro e armazeno na lista de resultados
+                        var registro = new RegistroCotas
+                        (
+                            Cnpj: cnpj,
+                            Data: csv.GetField<DateOnly>(HEADER_Data),
+                            Cota: csv.GetField<double>(HEADER_Cota),
+                            NumCotistas: csv.GetField<int>(HEADER_NumCotistas)
+                        );
+                        registros.Add(registro);
+                    }
                 }
+                watch.Stop();
+                Console.WriteLine($"concluído, tempo: {watch.Elapsed}, encontrados {contaAlvosEncontrados} de {buscar.Count} CNPJs");
             }
-            watch.Stop();
-            Console.WriteLine($"concluído, tempo: {watch.Elapsed}, encontrados {contaAlvosEncontrados} de {buscar.Count} CNPJs");
         }
+        catch (System.Exception e)
+        {
+            Console.WriteLine($"ERRO ({e.Message}). Arquivo ignorado.");
+        }
+        
     }
 
     private void ParseAnoMesComCache(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
@@ -371,7 +474,7 @@ public class ParserCore
         {
             path= _opts.PathEscrita;
         }
-        using (var writer = new StreamWriter($@"{path}\{_opts.NomeArquivoFinal}.csv"))
+        using (var writer = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}.csv"))// CUIDADO, \
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
             csv.WriteRecords(_cotas);

@@ -9,7 +9,8 @@ public readonly record struct ParserOptions()
         Parametros,       // Exibe parâmetros
         Cache,            // Cria cache de presenças
         MostraCache,      // Mostra cache de presenças
-        Parse, Processar, // PROCESSAMENTO PRINCIPAL, gera arquivo filtrado (objetivo)        
+        Parse, Processar, // PROCESSAMENTO PRINCIPAL, gera arquivo filtrado (objetivo)     
+        Test   
     }
 
     // CONSTANTES
