@@ -13,19 +13,49 @@ public class ParserCore
         
     // Injetados no ctor
     private readonly ParserOptions _opts;
-    private readonly List<string> _buscar;
+    private readonly List<string> _cnpjs;
 
-    // Outros
-    private List<RegistroCotas>     _cotas = new();      // informação principal das cotas. Obtenção em Parse
+    // Dados usados pela funcionalidade antiga (uma saída, em vetor de registros)
+    private List<RegistroCotas>     _cotasRegistros = new();      // informação principal das cotas. Obtenção em Parse
     private List<RegistroPresenca>? _cachePresencas; // cache das datas quando cada fundo de interesse se faz presente
+    
+    // Dados usados pela nova funcionalidade (dupla saída, cotas e variações em "tabelonas")
+    private double[,] _cotas;               // informações de cotas [índice_data, índice_cnpj]
+    private bool[] _flagTemDados;           // flag se aquela linha (data!) em particular tem valores (dia útil)
+    private DateOnly _dataInicialMatriz;    // data inicial para matriz de dados (*)
+    private DateOnly _dataFinalMatriz;      // data inicial para matriz de dados (*)
+    private int linhasMatriz;               // quantidade de linhas é o número de datas corridas (não só dias úteils!) (*)
+                                            // (*) A data inicial é um dia primeiro, a data final é o último dia do mês
+                                            //     independentemente das datas especificadas como parâmetro para o Parse
+                                            //     Notar também que qualquer data pode ser identificada pelo número da linha
+                                            //     sabendo-se a data inicial
 
     public ParserCore(ParserOptions opts, List<string> buscar)
     {
         _opts=opts;
-        _buscar=buscar;
+        _cnpjs=buscar;
+        _cnpjs.Sort();
+
+        // Criação da matrix de cotas[data,cnpj]
+        // Datas: todas desde (AnoInicial, MesInicial, dia 1) 
+        //        e (AnoFinal,  MesFinal,  "Último Dia", a definir abaixo)
+        // Várias datas serão fds e feriado, e ficarão sem registro, ou seja,
+        // há desperdício de memória pela praticidade. Tratar depois!
+        _dataInicialMatriz = new DateOnly(opts.AnoInicial, opts.MesInicial, 1);
+        int ultimoDia = opts.MesFinal switch
+        {
+            1 or 3 or 5 or 7 or 8 or 10 or 12 => 31,         // meses de 31 dias
+            4 or 6 or 9 or 11 => 30,                         // meses de 30 dias
+            2 when DateTime.IsLeapYear(opts.AnoFinal) => 29, // fevereiro bissexto           
+            _ => 28                                          // else, fevereiro não bissexto
+        };
+        _dataFinalMatriz = new DateOnly(opts.AnoFinal, opts.MesFinal, ultimoDia);
+        linhasMatriz = DiasContagem(_dataInicialMatriz, _dataFinalMatriz);
+        _cotas = new double[linhasMatriz, _cnpjs.Count];
+        _flagTemDados = new bool[linhasMatriz];
     }
-
-
+    
+    
     // Execução do comando
     public void Processar()
     {
@@ -37,15 +67,30 @@ public class ParserCore
             case Comando.Parametros:
                 MostrarParametros();
                 break;
-            case Comando.Processar:
-            case Comando.Parse: // Processa arquivos da CVM e escreve arquivo filtrado
+            case Comando.ProcessarOld:
+            case Comando.ParseOld: // Processa arquivos da CVM e escreve arquivo filtrado em forma de vetores = ANTIGO!!!!
                 ParsePeriodo();
                 if (_opts.EscreverSaida)
                 {
                     System.Console.WriteLine("- Escrevendo saída em forma de vetores");
-                    EscreverNovoArquivo();
-                    // System.Console.WriteLine("- Escrevendo saída em dupla tabela");
-                    // EscreverTabelonas();
+                    EscreverNovoArquivo();                    
+                }
+                else
+                {
+                    Console.WriteLine("- Ignorando escrita do arquivo de saída");
+                }
+                break;
+            case Comando.Processar:
+            case Comando.Parse:   // Processa arquivos da CVM e escreve 2 arquivos filtrados com cotas e variações
+                ParsePeriodoTabelona();
+                if (_opts.EscreverSaida)
+                {
+                    System.Console.WriteLine("- Escrevendo saída em dupla tabela");
+                    //var watch = new System.Diagnostics.Stopwatch();
+                    //watch.Start();
+                    EscreverTabelonas();
+                    //watch.Stop();
+                    //Console.WriteLine($"...demorou {watch.Elapsed}");                    
                 }
                 else
                 {
@@ -73,19 +118,8 @@ public class ParserCore
                     MostrarCacheDePresencas();
                 }
                 break;
-            case Comando.Test: 
-                ParsePeriodo();
-                if (_opts.EscreverSaida)
-                {
-                    System.Console.WriteLine("- Escrevendo saída em forma de vetores");
-                    EscreverNovoArquivo();
-                    System.Console.WriteLine("- Escrevendo saída em dupla tabela");
-                    EscreverTabelonas();
-                }
-                else
-                {
-                    Console.WriteLine("- Ignorando escrita do arquivo de saída");
-                }
+            case Comando.Teste:
+                Console.WriteLine("Comando para teste de novas funcionalidades. No momento, sem implementação");
                 break;
             default:
                 throw new ArgumentException($"### Comando {_opts.Cmd} não implementado.");
@@ -93,89 +127,11 @@ public class ParserCore
     }
     
 
-    private void EscreverTabelonas()
-    {
-        // Tratamento: se não foi especificado path de escrita, usar mesmo de leitura
-        string path;
-        if (_opts.PathEscrita=="")
-        {
-            path = _opts.PathLeitura;
-        }
-        else
-        {
-            path= _opts.PathEscrita;
-        }
-
-        // Dois arquivos simultaneos, cotas e variações diárias
-        using var wcotas  = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_cotas.csv");     // CUIDADO, \
-        using var wvardia = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_vardia.csv"); 
-        
-        // Listas de CNPJs e Datas
-        var cnpjs = _cotas.Select(c => c.Cnpj).Distinct().OrderBy(i=>i).ToList();
-        var datas = _cotas.Select(c => c.Data).Distinct().OrderBy(i=>i).ToList();
-
-        // Auxiliares
-        RegistroCotas? rcota;                 // um único "registro de cotas" (record com data, cnpj, cota, num cotistas)
-        double?[] cotahoje, cotaontem;        // vetores das cotas de todos os fundos nas data de hoje e ontem para calcular variação diária
-        cotahoje  = new double?[cnpjs.Count]; // preciso inicializar o vetor "hoje" (**)
-
-        // Geração da 1a linha (cabeçalho) dos 2 arquivos, onde em ambos se lê "Data" e os CNPJs
-        wcotas.Write("Data");
-        wvardia.Write("Data");
-        foreach (var cnpj in cnpjs)
-        {
-            wcotas.Write($";{cnpj}");
-            wvardia.Write($";{cnpj}");
-        }
-        wcotas.Write("\n");  
-        wvardia.Write("\n");   
-
-        // Gera linhas, data por data, com cotas e variações diárias
-        foreach (var data in datas)
-        {
-            // Primeiro valor em ambos os arquivos é a própria data
-            wcotas.Write(data);
-            wvardia.Write(data);
-            // Vetores auxiliares: "ontem = hoje", "hoje será recriado". 
-            // Na primeira interação, copia-se o vetor vazio criado em (**), dispensando tratamento especial
-            cotaontem = cotahoje;
-            cotahoje  = new double?[cnpjs.Count];
-            // Loop por todos os CNPJs, indexados por i
-            for(var i=0; i<cnpjs.Count; i++)
-            {
-                var cnpj = cnpjs[i];
-                rcota = _cotas.SingleOrDefault(c => c.Data.Equals(data) && c.Cnpj.Equals(cnpj)); // ### PONTO CRÍTICO. PRECISO OTIMIZAR!
-                if (rcota is not null) // caso registro existente (não nulo)
-                {
-                    double cota = rcota.Cota;     // armazeno a cota para uso imediato
-                    cotahoje[i] = cota;           // armazeno cópia no vetor, que será usada como "cota de ontem" na pŕoxima iteração
-                    wcotas.Write($";{cota}");     // escrevo cota no arquivo de cotas
-                    if (cotaontem[i] is not null) // calculo e escrevo variação diária apenas se valor "de ontem" não nulo, senão escrevo ";"
-                    {
-                        wvardia.Write($";{cota/cotaontem[i]-1}");
-                    }
-                    else
-                    {
-                        wvardia.Write(";");
-                    }
-                }   
-                else // caso de registro nulo (inexistente), escrever apenas ";"
-                {
-                    wcotas.Write(";");
-                    wvardia.Write(";");
-                }
-            }
-            // Fim da linha nos 2 arquivos de saída
-            wcotas.Write("\n"); 
-            wvardia.Write("\n"); 
-        }
-    }
-
-
+    
     // Funções relativas ao cache de presenças
     private void ConstruirESalvarCacheDePresencas()
     {
-        Console.WriteLine($"> Construindo cache de presenças, buscando {_buscar.Count} fundos");
+        Console.WriteLine($"> Construindo cache de presenças, buscando {_cnpjs.Count} fundos");
         
         // Verifica se foi informado nome para arquivo, senão, cancela processamento
         if (string.IsNullOrEmpty(_opts.NomeArquivoCacheDePresencas))
@@ -225,7 +181,7 @@ public class ParserCore
                     while (csv.Read())
                     {
                         string cnpj = csv.GetField(HEADER_Cnpj);
-                        if (cnpj != cnpj_anterior && _buscar.Contains(cnpj))
+                        if (cnpj != cnpj_anterior && _cnpjs.Contains(cnpj))
                         {
                             // nesse caso, achei linha com novo cnpj. Atualizo anterior e processo:
                             cnpj_anterior = cnpj;
@@ -255,7 +211,7 @@ public class ParserCore
                     contaDescartesTotal += contaDescartes;
                     contaNovosTotal += contaNovos;
                     contaArquivosProcessadosTotal++;
-                    if (contaNovosTotal>=_buscar.Count)
+                    if (contaNovosTotal>=_cnpjs.Count)
                     {
                         // Caso já tenha encontrado todos os fundos, não preciso
                         // prosseguir e uso goto para sair dos loops aninhados
@@ -310,7 +266,7 @@ public class ParserCore
     }
 
 
-    // Funções principais  
+    // Funções principais DA FUNCIONALIDADE ANTIGA
     private void ParsePeriodo()
     {
         // Verificar se datas estão válidas
@@ -332,11 +288,11 @@ public class ParserCore
             {
                 if (utilizarCacheDePresencas)
                 {
-                    ParseAnoMesComCache(ano, mes, _buscar, _cotas);
+                    ParseAnoMesComCache(ano, mes, _cnpjs, _cotasRegistros);
                 }
                 else 
                 {
-                    ParseAnoMes(ano, mes, _buscar, _cotas);
+                    ParseAnoMes(ano, mes, _cnpjs, _cotasRegistros);
                 }
                 mesesProcessados++;
             }
@@ -345,7 +301,7 @@ public class ParserCore
         watch.Stop();
         Console.WriteLine($"> Processados {mesesProcessados} arquivos, tempo: {watch.Elapsed}");        
     }
-    
+
     private void ParseAnoMes(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
     {
         // Identifico arquivo de dados da CVM do respectivo ano e mês
@@ -429,7 +385,7 @@ public class ParserCore
         List<string> presentes = new();
 
         // Confrontar cada CNPJ da lista de busca com o cache de presenças
-        foreach (var cnpj in _buscar)
+        foreach (var cnpj in _cnpjs)
         {
             // Procuro cnpj no cache de presenças
             RegistroPresenca? rp = _cachePresencas?.SingleOrDefault(x => x.Cnpj == cnpj);
@@ -477,12 +433,200 @@ public class ParserCore
         using (var writer = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}.csv"))// CUIDADO, \
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
-            csv.WriteRecords(_cotas);
+            csv.WriteRecords(_cotasRegistros);
         }                   
     }
 
-    
-    // Funções auxiliares
+
+    // Funções principais, funcionalidade nova, dupla saída com todas as cotas e variações
+    private void ParsePeriodoTabelona()
+    {
+        // Verificar se datas estão válidas
+        if (!_opts.ValidarPeriodo())
+        {
+            throw new ArgumentException("Datas fornecidas inválidas");
+        }
+        // Utilizara cache se foi informado arquivo, senão desprezará
+        bool utilizarCacheDePresencas = _opts.NomeArquivoCacheDePresencas != "";
+        // Inicio cronômetro antes do loop
+        var watch = new System.Diagnostics.Stopwatch();
+        watch.Start();
+        // Loop principal
+        int mesesProcessados = 0;
+        for (int ano = _opts.AnoInicial; ano <= _opts.AnoFinal; ano++)
+        {
+            for (int mes = (ano == _opts.AnoInicial ? _opts.MesInicial : 1);
+                     mes <= (ano == _opts.AnoFinal ? _opts.MesFinal : 12); mes++)
+            {
+                ParseAnoMesTabelona(ano, mes);//, _cnpjs, _cotasRegistros);                
+                mesesProcessados++;
+            }
+        }
+        // Fim
+        watch.Stop();
+        Console.WriteLine($"> Processados {mesesProcessados} arquivos, tempo: {watch.Elapsed}");
+    }
+
+    private void ParseAnoMesTabelona(int ano, int mes)//, List<string> buscar, List<RegistroCotas> registros)
+    {
+        // Identifico arquivo de dados da CVM do respectivo ano e mês
+        string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv";// CUIDADO, \
+        Console.Write($"> Processando arquivo {fileName}...");
+
+        // Variáveis auxiliares para tratar quantos CNPJs foram identificados
+        int contaAlvosEncontrados = 0;
+        string ultimoAlvoEncontrado = "";
+        string cnpj = "";
+        string cnpjDescartado = "";
+
+        try
+        {
+            using (var reader = new StreamReader(fileName))
+            using (var csv = new CsvReader(reader,
+                                        new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
+            // InvariantCulture não identifica ";" usado no CSV, enquanto que Cultura BR
+            // não identifica "." decimal, portanto altero para invariante MAS
+            // especifico o delimitador
+            {
+                // Leitura do cabeçalho exige esses dois passos
+                csv.Read(); csv.ReadHeader();
+                // Inicio cronômetro antes do loop
+                var watch = new System.Diagnostics.Stopwatch();
+                watch.Start();
+                while (csv.Read())
+                {
+                    // Leio próximo CNPJ
+                    cnpj = csv.GetField(HEADER_Cnpj);
+                    
+                    if (cnpj==cnpjDescartado) 
+                        // Igual ao último CNPJ que, tendo sido consultada lista de busca, não interessa
+                    {
+                        continue;
+                    }
+                    else if (!_cnpjs.Contains(cnpj)) 
+                        // Consulto novo Cnpj na lista de busca. Se não consta, programo para descarte
+                    {
+                        cnpjDescartado=cnpj; // para descartar na próxima interação sem consultar lista
+                        if (contaAlvosEncontrados < _cnpjs.Count)
+                        {
+                            // Caso não seja buscado, mas ainda não tenha encontrado todos, continue para proxima iteração do loop 
+                            // ATENÇÃO: se eu conseguir saber à priori em que ano e mês começam as cotas para os CNPJ em busca, posso evitar
+                            // que fique procurando desnecessariamente até o final de arquivos onde o fundo não existe. Para implementar isso,
+                            // precisa de um tratamento à parte dos dados.
+                            continue;
+                        }
+                        else // contaAlvosEncontrados >= _cnpjs.Count
+                        {
+                            // Caso não seja buscado, mas já tenha encontrado todos da lista, quebrar loop (desnecessário continuar percorrendo arquivo)
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        // Se cheguei aqui, estou na linha de um CNPJ buscado.
+                        // Só vou incrementar o contador de alvos encontrados se o CNPJ dessa linha
+                        // for diferente do último alvo encontrado, ou seja, "encontrei novo alvo"
+                        if (cnpj != ultimoAlvoEncontrado)
+                        {
+                            contaAlvosEncontrados++;
+                            ultimoAlvoEncontrado = cnpj;
+                        }
+                        // Prossigo lendo demais campos, crio o registro e armazeno na lista de resultados
+                        int linha = IndexFromData(csv.GetField<DateOnly>(HEADER_Data));
+                        _cotas[linha, _cnpjs.IndexOf(cnpj)] = csv.GetField<double>(HEADER_Cota);
+                        _flagTemDados[linha] = true;
+                    }
+                }
+                watch.Stop();
+                Console.WriteLine($"concluído, tempo: {watch.Elapsed}, encontrados {contaAlvosEncontrados} de {_cnpjs.Count} CNPJs");
+            }
+        }
+        catch (System.Exception e)
+        {
+            Console.WriteLine($"ERRO ({e.Message}). Arquivo ignorado.");
+        }
+
+    }
+
+    private void EscreverTabelonas()
+    {
+        // Tratamento: se não foi especificado path de escrita, usar mesmo de leitura
+        string path;
+        if (_opts.PathEscrita=="")
+        {
+            path = _opts.PathLeitura;
+        }
+        else
+        {
+            path= _opts.PathEscrita;
+        }
+
+        // Dois arquivos simultaneos, cotas e variações diárias
+        using var wcotas = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_cotas.csv");     // CUIDADO, \
+        using var wvardia = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_vardia.csv");
+
+        // Listas de CNPJs e Datas
+        //var _cnpjs = _cotasRegistros.Select(c => c.Cnpj).Distinct().OrderBy(i => i).ToList();
+        var datas = _cotasRegistros.Select(c => c.Data).Distinct().OrderBy(i => i).ToList();
+
+        // Auxiliares
+        //RegistroCotas? rcota;                 // um único "registro de cotas" (record com data, cnpj, cota, num cotistas)
+        double[] cotahoje, cotaontem;        // vetores das cotas de todos os fundos nas data de hoje e ontem para calcular variação diária
+        cotahoje  = new double[_cnpjs.Count]; // preciso inicializar o vetor "hoje" (**)
+
+        // Geração da 1a linha (cabeçalho) dos 2 arquivos, onde em ambos se lê "Data" e os CNPJs
+        wcotas.Write("Data");
+        wvardia.Write("Data");
+        foreach (var cnpj in _cnpjs)
+        {
+            wcotas.Write($";{cnpj}");
+            wvardia.Write($";{cnpj}");
+        }
+        wcotas.Write("\n");
+        wvardia.Write("\n");
+
+        // Gera linhas, data por data, com cotas e variações diárias
+        for (int i = 0; i<linhasMatriz; i++)
+        {
+
+            // Antes de tudo, chegar se alguma cota foi inserida na data em questão, senão, desprezar            
+            if (_flagTemDados[i]==false)
+                continue;
+            // Desta linha em diante, sei que há dados a serem escritos
+
+
+            // Primeiro valor em ambos os arquivos é a própria data
+            DateOnly data = DataFromIndex(i);
+            wcotas.Write(data);
+            wvardia.Write(data);
+            // Vetores auxiliares: "ontem = hoje", "hoje será recriado". 
+            // Na primeira interação, copia-se o vetor vazio criado em (**), dispensando tratamento especial
+            cotaontem = cotahoje;
+            cotahoje  = new double[_cnpjs.Count];
+            // Loop por todos os CNPJs, indexados por i
+            for (int j = 0; j<_cnpjs.Count; j++)
+            {
+                double cota = _cotas[i, j];
+                cotahoje[j] = cota;
+                wcotas.Write($";{cota}");
+                if (cotaontem[j] > 0) // calculo e escrevo variação diária apenas se valor "de ontem" não nulo, senão escrevo ";"
+                {
+                    wvardia.Write($";{cota/cotaontem[j]-1}");
+                }
+                else
+                {
+                    wvardia.Write(";");
+                }
+            }
+            // Fim da linha nos 2 arquivos de saída
+            wcotas.Write("\n");
+            wvardia.Write("\n");
+        }
+    }
+
+
+
+    // FUNÇÕES AUXILIARES
     public static void Usage()
     {
         Console.WriteLine(@" Forma de uso:");
@@ -550,8 +694,26 @@ public class ParserCore
     {
         Console.WriteLine();
         Console.WriteLine($"REGISTROS DO CNPJ {cnpj}:");
-        foreach (var item in _cotas.Where(r => r.Cnpj.Equals(cnpj)))
+        foreach (var item in _cotasRegistros.Where(r => r.Cnpj.Equals(cnpj)))
             Console.WriteLine(item);
     }
+
+
+    // OUTRAS FUNÇÕES AUXILIARES, referentes ao tratamento de datas com DateOnly
+    // Função utilitária p/calcular diferença em dias entre 2 datas tipo DateOnly. Se datas iguais, distânmcia zero
+    private int DiasDistancia(DateOnly inicial, DateOnly final)
+        => final.DayNumber - inicial.DayNumber;
+
+    // Função utilitária p/calcular contagem de dias entre 2 datas. Se datas iguais, 1 dia. 
+    private int DiasContagem(DateOnly inicial, DateOnly final)
+        => final.DayNumber - inicial.DayNumber + 1;
+
+    // O índice das datas, ou seja, linha da data na matriz _cotas[data,cnpj]
+    private int IndexFromData(DateOnly data)
+        => DiasDistancia(_dataInicialMatriz, data);
+
+    // A data correspondente a um índice, ou seja, dataInicial somada ao próprio índice como número de dias
+    private DateOnly DataFromIndex(int i)
+        => _dataInicialMatriz.AddDays(i);
 
 }
