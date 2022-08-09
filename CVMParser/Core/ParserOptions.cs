@@ -9,9 +9,9 @@ public readonly record struct ParserOptions()
         Parametros,             // Exibe parâmetros
         Cache,                  // Cria cache de presenças
         MostraCache,            // Mostra cache de presenças
-        ParseOld, ProcessarOld, // Funcionalidade antiga
-        Parse, Processar,       // PROCESSAMENTO PRINCIPAL, gera arquivo filtrado (objetivo)     
-        Teste   
+        ParseSimples,           // Funcionalidade "antiga", gera arquivo "comprido" com 1 informação por linha
+        ParseDuplo,             // Funcionalidade "nova", gera 2 arquivos "tabelonas" com cotas e variações          
+        Teste                   // Para novas implementações
     }
 
     // CONSTANTES

@@ -67,8 +67,7 @@ public class ParserCore
             case Comando.Parametros:
                 MostrarParametros();
                 break;
-            case Comando.ProcessarOld:
-            case Comando.ParseOld: // Processa arquivos da CVM e escreve arquivo filtrado em forma de vetores = ANTIGO!!!!
+            case Comando.ParseSimples: // Processa arquivos da CVM e escreve arquivo filtrado em forma de vetores = ANTIGO!!!!
                 ParsePeriodo();
                 if (_opts.EscreverSaida)
                 {
@@ -80,8 +79,7 @@ public class ParserCore
                     Console.WriteLine("- Ignorando escrita do arquivo de saída");
                 }
                 break;
-            case Comando.Processar:
-            case Comando.Parse:   // Processa arquivos da CVM e escreve 2 arquivos filtrados com cotas e variações
+            case Comando.ParseDuplo:   // Processa arquivos da CVM e escreve 2 arquivos filtrados com cotas e variações
                 ParsePeriodoTabelona();
                 if (_opts.EscreverSaida)
                 {
@@ -163,7 +161,7 @@ public class ParserCore
                 int contaNovos = 0;
 
                 // Identifico arquivo CSV
-                string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv"; // CUIDADO, \
+                string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv"; 
                 Console.Write($"> Buscando CNPJs em {fileName}...");
 
                 // Crio recursos
@@ -250,7 +248,7 @@ public class ParserCore
             throw new Exception("### Não foi informado nome para o arquivo cache de presenças");
         }
         Console.WriteLine("> Salvando arquivo de presenças:");
-        using (var writer = new StreamWriter($@"{_opts.PathLeitura}{_opts.NomeArquivoCacheDePresencas}.csv"))// CUIDADO, \
+        using (var writer = new StreamWriter($@"{_opts.PathLeitura}{_opts.NomeArquivoCacheDePresencas}.csv"))
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
             csv.WriteRecords(_cachePresencas);
@@ -259,7 +257,7 @@ public class ParserCore
 
     private void LerCacheDePresencasDeArquivo()
     {       
-        using (var reader = new StreamReader($@"{_opts.PathLeitura}{_opts.NomeArquivoCacheDePresencas}.csv"))// CUIDADO, \
+        using (var reader = new StreamReader($@"{_opts.PathLeitura}{_opts.NomeArquivoCacheDePresencas}.csv"))
         using (var csv = new CsvReader(reader,
                                        new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";" }))
             _cachePresencas = csv.GetRecords<RegistroPresenca>().ToList();
@@ -305,7 +303,7 @@ public class ParserCore
     private void ParseAnoMes(int ano, int mes, List<string> buscar, List<RegistroCotas> registros)
     {
         // Identifico arquivo de dados da CVM do respectivo ano e mês
-        string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv";// CUIDADO, \
+        string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv";
         Console.Write($"> Processando arquivo {fileName}...");
 
         // Variáveis auxiliares para tratar quantos CNPJs foram identificados
@@ -430,7 +428,7 @@ public class ParserCore
         {
             path= _opts.PathEscrita;
         }
-        using (var writer = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}.csv"))// CUIDADO, \
+        using (var writer = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}.csv"))
         using (var csv = new CsvWriter(writer, CultureInfo.GetCultureInfo("pt-BR")))  // pt-BR para melhor tratamento no Excel
         {
             csv.WriteRecords(_cotasRegistros);
@@ -467,10 +465,10 @@ public class ParserCore
         Console.WriteLine($"> Processados {mesesProcessados} arquivos, tempo: {watch.Elapsed}");
     }
 
-    private void ParseAnoMesTabelona(int ano, int mes)//, List<string> buscar, List<RegistroCotas> registros)
+    private void ParseAnoMesTabelona(int ano, int mes)
     {
         // Identifico arquivo de dados da CVM do respectivo ano e mês
-        string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv";// CUIDADO, \
+        string fileName = $@"{_opts.PathLeitura}inf_diario_fi_{ano:0000}{mes:00}.csv";
         Console.Write($"> Processando arquivo {fileName}...");
 
         // Variáveis auxiliares para tratar quantos CNPJs foram identificados
@@ -562,17 +560,12 @@ public class ParserCore
         }
 
         // Dois arquivos simultaneos, cotas e variações diárias
-        using var wcotas = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_cotas.csv");     // CUIDADO, \
+        using var wcotas = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_cotas.csv");     
         using var wvardia = new StreamWriter($@"{path}{_opts.NomeArquivoFinal}_vardia.csv");
-
-        // Listas de CNPJs e Datas
-        //var _cnpjs = _cotasRegistros.Select(c => c.Cnpj).Distinct().OrderBy(i => i).ToList();
-        var datas = _cotasRegistros.Select(c => c.Data).Distinct().OrderBy(i => i).ToList();
-
+                
         // Auxiliares
-        //RegistroCotas? rcota;                 // um único "registro de cotas" (record com data, cnpj, cota, num cotistas)
-        double[] cotahoje, cotaontem;        // vetores das cotas de todos os fundos nas data de hoje e ontem para calcular variação diária
-        cotahoje  = new double[_cnpjs.Count]; // preciso inicializar o vetor "hoje" (**)
+        double[] cotaOntem  = new double[_cnpjs.Count];
+        double cotaHoje;
 
         // Geração da 1a linha (cabeçalho) dos 2 arquivos, onde em ambos se lê "Data" e os CNPJs
         wcotas.Write("Data");
@@ -588,39 +581,38 @@ public class ParserCore
         // Gera linhas, data por data, com cotas e variações diárias
         for (int i = 0; i<linhasMatriz; i++)
         {
-
-            // Antes de tudo, chegar se alguma cota foi inserida na data em questão, senão, desprezar            
+            // Antes de tudo, checar se alguma cota foi inserida na data em questão, senão, desprezar            
             if (_flagTemDados[i]==false)
-                continue;
-            // Desta linha em diante, sei que há dados a serem escritos
-
-
-            // Primeiro valor em ambos os arquivos é a própria data
-            DateOnly data = DataFromIndex(i);
-            wcotas.Write(data);
-            wvardia.Write(data);
-            // Vetores auxiliares: "ontem = hoje", "hoje será recriado". 
-            // Na primeira interação, copia-se o vetor vazio criado em (**), dispensando tratamento especial
-            cotaontem = cotahoje;
-            cotahoje  = new double[_cnpjs.Count];
-            // Loop por todos os CNPJs, indexados por i
-            for (int j = 0; j<_cnpjs.Count; j++)
             {
-                double cota = _cotas[i, j];
-                cotahoje[j] = cota;
-                wcotas.Write($";{cota}");
-                if (cotaontem[j] > 0) // calculo e escrevo variação diária apenas se valor "de ontem" não nulo, senão escrevo ";"
-                {
-                    wvardia.Write($";{cota/cotaontem[j]-1}");
-                }
-                else
-                {
-                    wvardia.Write(";");
-                }
+                continue;
             }
-            // Fim da linha nos 2 arquivos de saída
-            wcotas.Write("\n");
-            wvardia.Write("\n");
+            else
+            {
+                // Primeiro valor em ambos os arquivos é a própria data, obtida do índice (linha da matriz)
+                DateOnly data = DataFromIndex(i);
+                wcotas.Write(data);
+                wvardia.Write(data);
+                // Loop por todos os CNPJs, indexados por i
+                for (int j = 0; j<_cnpjs.Count; j++)
+                {
+                    cotaHoje = _cotas[i, j];
+                    wcotas.Write($";{cotaHoje}");
+                    if (cotaOntem[j] > 0) // calculo e escrevo variação diária apenas se valor "de ontem" > 0
+                    {
+                        wvardia.Write($";{cotaHoje/cotaOntem[j]-1}");
+                    }
+                    else
+                    {
+                        wvardia.Write(";");
+                    }
+                    cotaOntem[j] = cotaHoje; // Cota de hoje já foi escrita, já foi usada no cálculo da variação e 
+                                             // agora é armazenada no array de cotas de ontem para ser usada no cálculo
+                                             // da variação da próxima linha
+                }
+                // Fim da linha nos 2 arquivos de saída
+                wcotas.Write("\n");
+                wvardia.Write("\n");
+            }            
         }
     }
 
@@ -656,9 +648,11 @@ public class ParserCore
         Console.WriteLine(@"   -cmd=Parametros: Apenas mostra os parâmetros, para conferência");
         Console.WriteLine(@"   -cmd=Cache: Constrói cache de presenças. Exige parâmetro -cache");
         Console.WriteLine(@"   -cmd=MostrarCache: Lê o cache salvo e mostra. Exige parâmetro -cache");
-        Console.WriteLine(@"   -cmd=Processar: Executa processamento e escreve arquivo filtrado");
+        Console.WriteLine(@"   -cmd=ParseSimples: Executa processamento e escreve arquivo filtrado");
         Console.WriteLine(@"        O processamento fará uso do cache se arquivo for informado ");
-        Console.WriteLine(@"        com parÂmetro -cache=nome");
+        Console.WriteLine(@"        com parâmetro -cache=nome");
+        Console.WriteLine(@"   -cmd=ParseDuplo: Executa processamento e escreve duas tabelonas");
+        Console.WriteLine(@"        com o nome especificado acrescentado de _cotas e _vardia ");
         Console.WriteLine(@" ");
         Console.WriteLine(@" ");
         Console.WriteLine(@" * Sobre o Cache: recurso em desenvolvimento, ganho de tempo mínimo"); 
